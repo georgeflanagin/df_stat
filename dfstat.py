@@ -6,7 +6,7 @@ from   typing import *
 # Credits
 ###
 __author__ = 'Alina Enikeeva'
-__copyright__ = 'Copyright 2022, University of Richmond'
+__copyright__ = 'Copyright 2023, University of Richmond'
 __credits__ = None
 __version__ = 0.1
 __maintainer__ = 'Alina Enikeeva'
@@ -140,6 +140,21 @@ def delete_older_entries():
     SQL_delete = """DELETE FROM df_stat WHERE datetime < DATETIME('now', '-1 day')"""
     db.execute_SQL(SQL_delete)
 
+def is_mem_drop(dir: str) -> bool:
+    """
+    Compares last two entries for /home and /scratch 
+    and return True if the previous entry is higher than the 
+    current one - f(then) > f(now). That way we will determine that 
+    there is a drop in memory rather than the rise. 
+    """
+    SQL_select = f"""SELECT memavail FROM df_stat WHERE directory = '{dir}' ORDER BY datetime DESC LIMIT 2"""
+    result = db.execute_SQL(SQL_select, we_have_pandas=True)
+    mem_then = result.values[0][0]
+    mem_now = result.values[1][0]
+    if mem_then > mem_now:
+        return True
+
+
 def determine_stationarity():
     """
     This method uses KPSS test to determine data non-stationarity.
@@ -152,12 +167,14 @@ def determine_stationarity():
     select_home = """SELECT * FROM df_stat WHERE directory = '/home';"""
     df = db.execute_SQL(select_home, we_have_pandas=True)
 
+    
+
     # specify regression as ct to determine that null hypothesis is 
     # that the data is stationary
     statistic, p_value_home, n_lags, critical_values = kpss(df["memavail"], regression ='ct', store = True)
     
     # debug output
-    #print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
+    print(f'Result: The series is {"not " if p_value_home < 0.05 else ""}stationary')
 
     ### Conduct test for /scratch
     select_scratch = """SELECT * FROM df_stat WHERE directory = '/scratch';"""
@@ -167,17 +184,18 @@ def determine_stationarity():
     # that the data is stationary
     statistic, p_value_scratch, n_lags, critical_values = kpss(df["memavail"], regression ='ct', store = True)
 
-    ### send email if data is non-stationary
-    if p_value_home < 0.05:
+    ### send email if data is non-stationary and if there is memory drop
+    if (p_value_home < 0.05) and is_mem_drop("/home"):
         dir = "'/home'"
         subject = "'Check /home, there might be a memory drop.'"
-        cmd = f"mailx -s {subject}  'alina.enikeeva@richmond.edu'"
+        # send email in the background
+        cmd = f"nohup mailx -s {subject}  'alina.enikeeva@richmond.edu' /dev/null 2>&1 &"
         dorunrun(cmd)
         
-    elif p_value_scratch < 0.05:
+    elif (p_value_scratch < 0.05) and is_mem_drop("/scratch"):
         dir = "'/scratch'"
         subject = f"'Check /scratch, there might be a memory drop.'"
-        cmd = f"mailx -s {subject}  'alina.enikeeva@richmond.edu'"
+        cmd = f"nohup mailx -s {subject}  'alina.enikeeva@richmond.edu' /dev/null 2>&1 &"
         dorunrun(cmd)
         
     return
@@ -186,7 +204,8 @@ def determine_stationarity():
 def dfstat_main(myargs:argparse.Namespace) -> int:
     create_table()
     linuxutils.daemonize_me()
-    insert_in_db()
+    #print(is_mem_drop("/home"))
+    #insert_in_db()
     return fiscaldaemon_events()
 
 
