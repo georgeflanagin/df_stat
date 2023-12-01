@@ -125,7 +125,7 @@ def fiscaldaemon_events() -> int:
 
     while True:
         determine_stationarity()
-        time.sleep(60)
+        time.sleep(60*60)
         insert_in_db()
         delete_older_entries()
 
@@ -189,13 +189,13 @@ def determine_stationarity():
         dir = "'/home'"
         subject = "'Check /home, there might be a memory drop.'"
         # send email in the background
-        cmd = f"nohup mailx -s {subject}  'alina.enikeeva@richmond.edu' /dev/null 2>&1 &"
+        cmd = f"nohup mailx -s {subject}  'hpc@richmond.edu' /dev/null 2>&1 &"
         dorunrun(cmd)
         
     elif (p_value_scratch < 0.05) and is_mem_drop("/scratch"):
         dir = "'/scratch'"
         subject = f"'Check /scratch, there might be a memory drop.'"
-        cmd = f"nohup mailx -s {subject}  'alina.enikeeva@richmond.edu' /dev/null 2>&1 &"
+        cmd = f"nohup mailx -s {subject}  'hpc@richmond.edu' /dev/null 2>&1 &"
         dorunrun(cmd)
         
     return
