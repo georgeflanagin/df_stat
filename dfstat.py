@@ -32,6 +32,7 @@ import argparse
 import contextlib
 from datetime import datetime
 import getpass
+import regex as re
 import sqlite3
 import time
 import numpy as np
@@ -63,6 +64,8 @@ from sqlitedb import SQLiteDB
 ###
 verbose = False
 
+filesys = []
+
 @trap
 def run_df():
     """
@@ -78,19 +81,29 @@ def run_df():
 def extract_df():
     """
     This command extracts values from df -h
-    for /home and /scratch
+    for filesystems.
     """
     d = {}
+    mem_in_GB = 0
     lines = run_df().split('\n')
     for item in lines:
-        word = [w for w in item.split()]
-        if word[0] == "spdrstor01:/home":
-            # translate each memory entry in GB, rather than TB
-            mem_in_GB = float(word[3].split("T")[0])*1000
-            d["/home"] = mem_in_GB
-        elif word[0] == "spdrstor01:/scratch":
-            mem_in_GB = float(word[3].split("T")[0])*1000
-            d["/scratch"] = mem_in_GB
+        for filesystem in filesys:
+            word = [w for w in item.split()]
+            if word[0] == filesystem:
+                dir = word[5]
+
+                # translate each memory entry to GB
+                mem_entry = re.split('([a-zA-Z])+', word[3])
+                mem_metric = mem_entry[1]
+                mem_val = mem_entry[0]
+                if mem_metric == "T":
+                    mem_in_GB = float(mem_val) * 1000
+                elif mem_metric == "G":
+                    mem_in_GB = float(mem_val)
+                elif mem_metric == "M":
+                    mem_in_GB = float(mem_val) / 1000                
+        
+                d[dir] = mem_in_GB
     return d
 
 def create_table():
@@ -125,7 +138,7 @@ def fiscaldaemon_events() -> int:
 
     while True:
         determine_stationarity()
-        time.sleep(60*60)
+        #time.sleep(myargs.timeinterval)
         insert_in_db()
         delete_older_entries()
 
@@ -142,7 +155,7 @@ def delete_older_entries():
 
 def is_mem_drop(dir: str) -> bool:
     """
-    Compares last two entries for /home and /scratch 
+    Compare last two entries for filesystem 
     and return True if the previous entry is higher than the 
     current one - f(then) > f(now). That way we will determine that 
     there is a drop in memory rather than the rise. 
@@ -163,49 +176,33 @@ def determine_stationarity():
         2. p-value < 0.05
     If data is non-stationary, send email to hpc@richmond.edu
     """
-    ### Conduct test for /home
-    select_home = """SELECT * FROM df_stat WHERE directory = '/home';"""
-    df = db.execute_SQL(select_home, we_have_pandas=True)
+    info = extract_df()
+    for dir, _ in info.items():
+        ### Conduct test for each directory
+        select_SQL = f"""SELECT * FROM df_stat WHERE directory = '{dir}';"""
+        df = db.execute_SQL(select_SQL, we_have_pandas=True) 
 
+        # specify regression as ct to determine that null hypothesis is 
+        # that the data is stationary
+        print(df["memavail"])
+        statistic, p_value, n_lags, critical_values = kpss(df["memavail"], regression ='ct', store = True)
     
+        # debug output
+        #print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
 
-    # specify regression as ct to determine that null hypothesis is 
-    # that the data is stationary
-    statistic, p_value_home, n_lags, critical_values = kpss(df["memavail"], regression ='ct', store = True)
-    
-    # debug output
-    print(f'Result: The series is {"not " if p_value_home < 0.05 else ""}stationary')
-
-    ### Conduct test for /scratch
-    select_scratch = """SELECT * FROM df_stat WHERE directory = '/scratch';"""
-    df = db.execute_SQL(select_scratch, we_have_pandas=True)
-
-    # specify regression as ct to determine that null hypothesis is 
-    # that the data is stationary
-    statistic, p_value_scratch, n_lags, critical_values = kpss(df["memavail"], regression ='ct', store = True)
-
-    ### send email if data is non-stationary and if there is memory drop
-    if (p_value_home < 0.05) and is_mem_drop("/home"):
-        dir = "'/home'"
-        subject = "'Check /home, there might be a memory drop.'"
-        # send email in the background
-        cmd = f"nohup mailx -s {subject}  'hpc@richmond.edu' /dev/null 2>&1 &"
-        dorunrun(cmd)
-        
-    elif (p_value_scratch < 0.05) and is_mem_drop("/scratch"):
-        dir = "'/scratch'"
-        subject = f"'Check /scratch, there might be a memory drop.'"
-        cmd = f"nohup mailx -s {subject}  'hpc@richmond.edu' /dev/null 2>&1 &"
-        dorunrun(cmd)
-        
+        ### send email if data is non-stationary and if there is memory drop
+        if (p_value < 0.05) and is_mem_drop(dir):
+            subject = f"'Check {dir}, there might be a memory drop.'"
+            # send email in the background
+            cmd = f"nohup mailx -s {subject}  '{myargs.email}' /dev/null 2>&1 &"
+            #dorunrun(cmd)
     return
 
 @trap
 def dfstat_main(myargs:argparse.Namespace) -> int:
     create_table()
     linuxutils.daemonize_me()
-    #print(is_mem_drop("/home"))
-    #insert_in_db()
+    insert_in_db()
     return fiscaldaemon_events()
 
 
@@ -214,14 +211,20 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="dfstat", 
         description="What dfstat does, dfstat does best.")
 
-    parser.add_argument('-i', '--input', type=str, default="",
-        help="Input file name.")
+    parser.add_argument('-i', '--input', type=str, default="filesys.txt",
+        help="Input file with all file systems you need to track listed.")
     parser.add_argument('-o', '--output', type=str, default="",
         help="Output file name")
     parser.add_argument('-v', '--verbose', action='store_true',
         help="Be chatty about what is taking place")
     parser.add_argument('--db', type=str, default=os.path.realpath(f"dfstat.db"),
         help="Input database name.")
+    parser.add_argument('-ti', '--timeinterval', type=int, default=60*60,
+        help="Input time interval to update database.")
+    parser.add_argument('--email', type=str, default="hpc@richmond.edu",
+        help="Input email address to send a notification about memory drop.")
+
+
 
     myargs = parser.parse_args()
     verbose = myargs.verbose
@@ -232,6 +235,9 @@ if __name__ == '__main__':
         db = None
         print(f"Unable to open {myargs.db}")
         sys.exit(EX_CONFIG)
+    
+    with open(myargs.input) as f:
+        filesys = f.read().split("\n")
 
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
