@@ -138,7 +138,7 @@ def fiscaldaemon_events() -> int:
 
     while True:
         determine_stationarity()
-        #time.sleep(myargs.timeinterval)
+        time.sleep(myargs.timeinterval)
         insert_in_db()
         delete_older_entries()
 
@@ -168,6 +168,7 @@ def is_mem_drop(dir: str) -> bool:
         return True
 
 
+@trap
 def determine_stationarity():
     """
     This method uses KPSS test to determine data non-stationarity.
@@ -184,24 +185,33 @@ def determine_stationarity():
 
         # specify regression as ct to determine that null hypothesis is 
         # that the data is stationary
-        print(df["memavail"])
-        statistic, p_value, n_lags, critical_values = kpss(df["memavail"], regression ='ct', store = True)
+        # add noise to data so that KPSS statistics calculates results 
+        clean_data = df["memavail"].astype(float) 
+        mu, sigma = 0, 0.1 
+        noise = np.random.normal(mu, sigma, [1, df.shape[0]])
+        data_with_noise = clean_data + noise[0]
+        statistic, p_value, n_lags, critical_values = kpss(data_with_noise, regression ='ct', store = True)
     
         # debug output
-        #print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
+        print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
 
         ### send email if data is non-stationary and if there is memory drop
         if (p_value < 0.05) and is_mem_drop(dir):
-            subject = f"'Check {dir}, there might be a memory drop.'"
+            subject = f"'Check {dir}, there might be a disk space drop.'"
             # send email in the background
             cmd = f"nohup mailx -s {subject}  '{myargs.email}' /dev/null 2>&1 &"
-            #dorunrun(cmd)
+            dorunrun(cmd)
+        #except:
+        #    return
     return
 
 @trap
 def dfstat_main(myargs:argparse.Namespace) -> int:
     create_table()
+    here=os.getcwd()
     linuxutils.daemonize_me()
+    os.chdir(here)
+
     insert_in_db()
     return fiscaldaemon_events()
 
