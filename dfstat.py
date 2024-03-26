@@ -117,7 +117,7 @@ def determine_stationarity():
 
 
 @trap
-def empty_generator()
+def null_generator()
     return
     yield
 
@@ -214,14 +214,14 @@ def query_host(host:str) -> str:
         result = SloppyTree(dorunrun(cmd, return_datatype = dict))
         if not result.OK:
             db.record_error(host, result.code)
-            yield from empty_generator()
+            yield from null_generator()
 
         # return the lines, minus the header row, and with the \n chopped off.
         yield from ( _.strip() for _ in result.stdout.split('\n')[1:] )
 
     except Exception as e:
         db.record_error(host, -1)
-        yield from empty_generator()
+        yield from null_generator()
     
 
 @trap
