@@ -30,11 +30,16 @@ if sys.version_info < min_py:
 ###
 import argparse
 import contextlib
-from datetime import datetime
+from   datetime import datetime
 import getpass
 import regex as re
+import signal
 import sqlite3
 import time
+
+###
+# Installed libraries
+###
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
@@ -52,71 +57,94 @@ from statsmodels.tsa.stattools import adfuller
 ###
 import linuxutils
 from   urdecorators import trap
-from dorunrun import dorunrun
-from sqlitedb import SQLiteDB
+from   dorunrun import dorunrun
+from   sqlitedb import SQLiteDB
 
 ###
 # imports that are a part of this project
 ###
+from   dfdata import DFStatsDB
 
 ###
 # global objects
 ###
-verbose = False
-
-filesys = []
 
 @trap
-def run_df():
+def handler(signum:int, stack:object=None) -> None:
     """
-    Returns result of df -h command.
+    Universal signal handler.
     """
-    cmd = "df -h"
-    try: 
-        return dorunrun(cmd, return_datatype = str)
-    except Exception as e:
-        #print(f"Could not run the program. Exception {e} occurred.")
-        return None
-    
-def extract_df():
-    """
-    This command extracts values from df -h
-    for filesystems.
-    """
-    d = {}
-    mem_in_GB = 0
-    lines = run_df().split('\n')
-    for item in lines:
-        for filesystem in filesys:
-            word = [w for w in item.split()]
-            if word[0] == filesystem:
-                dir = word[5]
 
-                # translate each memory entry to GB
-                mem_entry = re.split('([a-zA-Z])+', word[3])
-                mem_metric = mem_entry[1]
-                mem_val = mem_entry[0]
-                if mem_metric == "T":
-                    mem_in_GB = float(mem_val) * 1000
-                elif mem_metric == "G":
-                    mem_in_GB = float(mem_val)
-                elif mem_metric == "M":
-                    mem_in_GB = float(mem_val) / 1000                
+    if signum in [ signal.SIGHUP, signal.SIGUSR1 ]: 
+        tomb.tombstone('Rereading all configuration files.')
         
-                d[dir] = mem_in_GB
+
+    elif signum in [ signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
+        tomb.tombstone('Closing up.')
+        uu.fclose_all()
+        sys.exit(os.EX_OK)
+
+    elif signum == signal.SIGRTMIN+1:
+        tomb.tombstone('Reloading code modules.')
+        i, j = code.reload_code()
+        tomb.tombstone('{} modules reloaded; {} new modules loaded.'.format(j, i))
+        canoed()        
+
+    else:
+        tomb.tombstone(
+            "ignoring signal {}. Check list of handled signals.".format(signum)
+            )
+
+
+@trap
+def query_host(host:str) -> str:
+    """
+    Returns result of 'df -P' command. This POSIX option
+    assures that different OS-es will return the data in the
+    same POSIX format rather than the native format of the
+    OS being queried.
+    """
+    cmd = f"ssh {host} 'df -P'"
+    try: 
+        result = SloppyTree(dorunrun(cmd, return_datatype = dict))
+        if not result.OK:
+            db.record_error(host, result.code)
+            return ""
+
+        # return the lines, minus the header row.
+        return [ _.strip() for _ in result.stdout.split('\n')[1:] ]
+
+    except Exception as e:
+        db.record_error(host, -1)
+        return ""
+    
+
+def extract_df(lines:list):
+    """
+    This command extracts values from df -P query. The parsed data 
+    look something like this (but w/o the header).
+
+    Filesystem                     1024-blocks      Used  Available Capacity Mounted on
+    devtmpfs                              4096         0       4096       0% /dev
+    tmpfs                             65486940        84   65486856       1% /dev/shm
+    tmpfs                             26194780     59616   26135164       1% /run
+    /dev/mapper/rl-root               73334784  16797908   56536876      23% /
+    /dev/mapper/rl-home             1795845384 146868444 1648976940       9% /home
+    /dev/sdb2                           983040    305856     677184      32% /boot
+    /dev/sdb1                           613160      7144     606016       2% /boot/efi
+    tmpfs                             13097388       328   13097060       1% /run/user/1000
+    /dev/md125                      1343253684 135131388 1208122296      11% /oldhome
+    141.166.186.35:/mnt/usrlocal/8  3766283008 263690368 3502592640       8% /usr/local/chem.sw
+    tmpfs                             13097388        36   13097352       1% /run/user/1001
+    """
+    
+    d = {}
+    for line in lines:
+        _0, space, _1, used, _2, partition = line.split()
+        if 
+ 
     return d
 
-def create_table():
-    """
-    Creates table in database with datetime, 
-    directory and available memory columns.
-    """
-    sql_create_table = """CREATE TABLE IF NOT EXISTS df_stat(
-                            datetime default current_timestamp,
-                            directory varchar(10),
-                            memavail varchar(5));"""
-    db.execute_SQL(sql_create_table)
-    
 def insert_in_db():
     """
     Inserts information into databse table.
@@ -206,14 +234,22 @@ def determine_stationarity():
     return
 
 @trap
-def dfstat_main(myargs:argparse.Namespace) -> int:
-    create_table()
+def dfstat_main(myconfig:SloppyTree) -> int:
+    """
+    Go demonic.
+    Get the database open.
+    Start querying.
+    """
     here=os.getcwd()
     linuxutils.daemonize_me()
     os.chdir(here)
 
-    insert_in_db()
-    return fiscaldaemon_events()
+    db = DFStatsDB(myconfig.db)
+    while True:
+        for host, partitions in db.get_targets():
+
+        time.sleep(myconfig.time_interval)
+
 
 
 if __name__ == '__main__':
@@ -221,38 +257,30 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="dfstat", 
         description="What dfstat does, dfstat does best.")
 
-    parser.add_argument('-i', '--input', type=str, default="filesys.txt",
-        help="Input file with all file systems you need to track listed.")
+    parser.add_argument('-i', '--input', type=str, default="dfstat.toml",
+        help="toml file with the config info.")
     parser.add_argument('-o', '--output', type=str, default="",
         help="Output file name")
-    parser.add_argument('-v', '--verbose', action='store_true',
-        help="Be chatty about what is taking place")
-    parser.add_argument('--db', type=str, default=os.path.realpath(f"dfstat.db"),
-        help="Input database name.")
-    parser.add_argument('-ti', '--timeinterval', type=int, default=60*60,
-        help="Input time interval to update database.")
-    parser.add_argument('--email', type=str, default="hpc@richmond.edu",
-        help="Input email address to send a notification about memory drop.")
-
-
 
     myargs = parser.parse_args()
-    verbose = myargs.verbose
+
+    caught_signals = [  signal.SIGINT, signal.SIGQUIT, signal.SIGHUP,
+                        signal.SIGUSR1, signal.SIGUSR2, signal.SIGRTMIN+1 ]
+
+    for signal in caught_signals:
+        signal.signal(signal, handler)
 
     try:
-        db = SQLiteDB(myargs.db)
+        with open(myargs.input, 'rb') as f:
+            myconfig=SloppyTree(tomllib.load(f))
     except:
-        db = None
-        print(f"Unable to open {myargs.db}")
+        print(f"Unable to read config from {myargs.input}")
         sys.exit(EX_CONFIG)
     
-    with open(myargs.input) as f:
-        filesys = f.read().split("\n")
-
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
         with contextlib.redirect_stdout(outfile):
-            sys.exit(globals()[f"{os.path.basename(__file__)[:-3]}_main"](myargs))
+            sys.exit(globals()[f"{os.path.basename(__file__)[:-3]}_main"](myconfig))
 
     except Exception as e:
         print(f"Escaped or re-raised exception: {e}")

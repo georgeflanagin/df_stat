@@ -1,0 +1,27 @@
+###
+# The database contains all the information about hosts and 
+# partitions that this program monitors.
+###
+database = 'dfstat.db'
+
+###
+# Number of seconds between polling.
+###
+time_interval = 3600
+
+###
+# Number of samples in the current window.
+###
+window_size = 50
+
+###
+# Where to send the alarms.
+###
+notification_address = [ 'hpc@richmond.edu', '8043992699' ]
+
+###
+# Parameters for statistical analysis
+###
+mu = 0
+sigma = 0.1
+p_value = 0.05
