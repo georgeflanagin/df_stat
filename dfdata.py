@@ -92,7 +92,7 @@ class DFStatsDB:
         """
         return ( self.db.execute_SQL(SQL.recent, window_size)
             if host == 'all' else 
-            self.db.execute_SQL(SQL.recent_by_host, host, window_size)
+            self.db.execute_SQL(SQL.recent_by_host, host, window_size) )
 
 
     def record_error(host:str, code:int) -> int:

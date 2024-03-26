@@ -33,6 +33,7 @@ from   collections.abc import Generator
 import contextlib
 from   datetime import datetime
 import getpass
+import logging
 import regex as re
 import signal
 import sqlite3
@@ -58,9 +59,10 @@ from statsmodels.tsa.stattools import adfuller
 ###
 from   dorunrun import dorunrun
 import linuxutils
-from   urlogger import URLogger
+from   sloppytree import SloppyTree
 from   sqlitedb import SQLiteDB
 from   urdecorators import trap
+from   urlogger import URLogger
 
 ###
 # imports that are a part of this project
@@ -117,12 +119,6 @@ def determine_stationarity():
 
 
 @trap
-def null_generator()
-    return
-    yield
-
-
-@trap
 def extract_df(lines:list, partitions:list) -> object:
     """
     This command extracts values from df -P query. The unparsed data 
@@ -136,12 +132,13 @@ def extract_df(lines:list, partitions:list) -> object:
     """
     
     d = {}
-    for _0, space, used, available _1, partition in lines.split('\n'):
+    for _0, space, used, available, _1, partition in lines.split('\n'):
         if partition in partitions:
             d[partition] = [int(space), int(used), int(available)]
  
     return d
     
+
 @trap
 def fiscaldaemon_events() -> int:
     """
@@ -160,6 +157,7 @@ def fiscaldaemon_events() -> int:
     fileutils.fclose_all()
     mylogger.info('All files closed')
     return os.EX_OK
+
 
 @trap
 def handler(signum:int, stack:object=None) -> None:
@@ -225,6 +223,12 @@ def query_host(host:str) -> str:
     
 
 @trap
+def null_generator():
+    return
+    yield
+
+
+@trap
 def dfstat_main(myconfig:SloppyTree) -> int:
     """
     Note: passing myconfig as an argument is not necessary in the
@@ -260,6 +264,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-i', '--input', type=str, default="dfstat.toml",
         help="toml file with the config info.")
+    parser.add_argument('--no-daemon', action='store_true',
+        help="run in the foreground (aids debugging)")
     parser.add_argument('-o', '--output', type=str, default="",
         help="Output file name")
 
