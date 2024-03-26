@@ -29,6 +29,7 @@ if sys.version_info < min_py:
 # Other standard distro imports
 ###
 import argparse
+from   collections.abc import Generator
 import contextlib
 from   datetime import datetime
 import getpass
@@ -55,146 +56,27 @@ from statsmodels.tsa.stattools import adfuller
 ###
 # From hpclib
 ###
-import linuxutils
-from   urdecorators import trap
 from   dorunrun import dorunrun
+import linuxutils
+from   urlogger import URLogger
 from   sqlitedb import SQLiteDB
+from   urdecorators import trap
 
 ###
 # imports that are a part of this project
 ###
 from   dfdata import DFStatsDB
+import sshconfig
 
 ###
 # global objects
 ###
-
-@trap
-def handler(signum:int, stack:object=None) -> None:
-    """
-    Universal signal handler.
-    """
-
-    if signum in [ signal.SIGHUP, signal.SIGUSR1 ]: 
-        tomb.tombstone('Rereading all configuration files.')
-        
-
-    elif signum in [ signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
-        tomb.tombstone('Closing up.')
-        uu.fclose_all()
-        sys.exit(os.EX_OK)
-
-    elif signum == signal.SIGRTMIN+1:
-        tomb.tombstone('Reloading code modules.')
-        i, j = code.reload_code()
-        tomb.tombstone('{} modules reloaded; {} new modules loaded.'.format(j, i))
-        canoed()        
-
-    else:
-        tomb.tombstone(
-            "ignoring signal {}. Check list of handled signals.".format(signum)
-            )
-
-
-@trap
-def query_host(host:str) -> str:
-    """
-    Returns result of 'df -P' command. This POSIX option
-    assures that different OS-es will return the data in the
-    same POSIX format rather than the native format of the
-    OS being queried.
-    """
-    cmd = f"ssh {host} 'df -P'"
-    try: 
-        result = SloppyTree(dorunrun(cmd, return_datatype = dict))
-        if not result.OK:
-            db.record_error(host, result.code)
-            return ""
-
-        # return the lines, minus the header row.
-        return [ _.strip() for _ in result.stdout.split('\n')[1:] ]
-
-    except Exception as e:
-        db.record_error(host, -1)
-        return ""
-    
-
-def extract_df(lines:list):
-    """
-    This command extracts values from df -P query. The parsed data 
-    look something like this (but w/o the header).
-
-    Filesystem                     1024-blocks      Used  Available Capacity Mounted on
-    devtmpfs                              4096         0       4096       0% /dev
-    tmpfs                             65486940        84   65486856       1% /dev/shm
-    tmpfs                             26194780     59616   26135164       1% /run
-    /dev/mapper/rl-root               73334784  16797908   56536876      23% /
-    /dev/mapper/rl-home             1795845384 146868444 1648976940       9% /home
-    /dev/sdb2                           983040    305856     677184      32% /boot
-    /dev/sdb1                           613160      7144     606016       2% /boot/efi
-    tmpfs                             13097388       328   13097060       1% /run/user/1000
-    /dev/md125                      1343253684 135131388 1208122296      11% /oldhome
-    141.166.186.35:/mnt/usrlocal/8  3766283008 263690368 3502592640       8% /usr/local/chem.sw
-    tmpfs                             13097388        36   13097352       1% /run/user/1001
-    """
-    
-    d = {}
-    for line in lines:
-        _0, space, _1, used, _2, partition = line.split()
-        if 
- 
-    return d
-
-def insert_in_db():
-    """
-    Inserts information into databse table.
-    """
-    SQL_insert = f"""INSERT INTO df_stat (directory, memavail) VALUES (?, ?)"""
-    info = extract_df()
-    for dir, mem in info.items():
-        db.execute_SQL(SQL_insert, dir, mem)
-    
-
-@trap
-def fiscaldaemon_events() -> int:
-    """
-    This is the event loop.
-    """
-    global myargs, mylogger
-
-    found_stop_event = False
-
-    while True:
-        determine_stationarity()
-        time.sleep(myargs.timeinterval)
-        insert_in_db()
-        delete_older_entries()
-
-    fileutils.fclose_all()
-    mylogger.info('All files closed')
-    return os.EX_OK
-
-def delete_older_entries():
-    """
-    Delete all the databse entries that are older than 7 days.
-    """
-    SQL_delete = """DELETE FROM df_stat WHERE datetime < DATETIME('now', '-1 day')"""
-    db.execute_SQL(SQL_delete)
-
-def is_mem_drop(dir: str) -> bool:
-    """
-    Compare last two entries for filesystem 
-    and return True if the previous entry is higher than the 
-    current one - f(then) > f(now). That way we will determine that 
-    there is a drop in memory rather than the rise. 
-    """
-    SQL_select = f"""SELECT memavail FROM df_stat WHERE directory = '{dir}' ORDER BY datetime DESC LIMIT 2"""
-    result = db.execute_SQL(SQL_select, we_have_pandas=True)
-    mem_then = result.values[0][0]
-    mem_now = result.values[1][0]
-    if mem_then > mem_now:
-        return True
-
+myconfig  = None
+sshconfig = None
+logger    = URLogger(
+                logfile=f"{os.path.basename(__file__)[:-3]}.log", 
+                level=logging.DEBUG
+                )
 
 @trap
 def determine_stationarity():
@@ -233,20 +115,139 @@ def determine_stationarity():
         #    return
     return
 
+
+@trap
+def empty_generator()
+    return
+    yield
+
+
+@trap
+def extract_df(lines:list, partitions:list) -> object:
+    """
+    This command extracts values from df -P query. The unparsed data 
+    look something like these data rows (but w/o the header).
+
+    Filesystem                     1024-blocks      Used  Available Capacity Mounted on
+    /dev/mapper/rl-root               73334784  16797908   56536876      23% /
+    /dev/mapper/rl-home             1795845384 146868444 1648976940       9% /home
+    /dev/md125                      1343253684 135131388 1208122296      11% /oldhome
+    141.166.186.35:/mnt/usrlocal/8  3766283008 263690368 3502592640       8% /usr/local/chem.sw
+    """
+    
+    d = {}
+    for _0, space, used, available _1, partition in lines.split('\n'):
+        if partition in partitions:
+            d[partition] = [int(space), int(used), int(available)]
+ 
+    return d
+    
+@trap
+def fiscaldaemon_events() -> int:
+    """
+    This is the event loop.
+    """
+    global myargs, mylogger
+
+    found_stop_event = False
+
+    while True:
+        determine_stationarity()
+        time.sleep(myargs.timeinterval)
+        insert_in_db()
+        delete_older_entries()
+
+    fileutils.fclose_all()
+    mylogger.info('All files closed')
+    return os.EX_OK
+
+@trap
+def handler(signum:int, stack:object=None) -> None:
+    """
+    Map SIGHUP and SIGUSR1 to a restart/reload, and 
+    SIGUSR2 and the other common signals to an orderly
+    shutdown. 
+    """
+    global myconfig
+    if signum in [ signal.SIGHUP, signal.SIGUSR1 ]: 
+        dfstat_main(myconfig)
+
+    elif signum in [ signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
+        logger.info('Closing up.')
+        fileutils.fclose_all()
+        sys.exit(os.EX_OK)
+
+    else:
+        return
+
+@trap
+def is_mem_drop(dir: str) -> bool:
+    """
+    Compare last two entries for filesystem 
+    and return True if the previous entry is higher than the 
+    current one - f(then) > f(now). That way we will determine that 
+    there is a drop in memory rather than the rise. 
+    """
+    SQL_select = f"""SELECT memavail FROM df_stat WHERE directory = '{dir}' ORDER BY datetime DESC LIMIT 2"""
+    result = db.execute_SQL(SQL_select, we_have_pandas=True)
+    mem_then = result.values[0][0]
+    mem_now = result.values[1][0]
+    if mem_then > mem_now:
+        return True
+
+
+@trap
+def query_host(host:str) -> str:
+    """
+    Returns result of 'df -P' command. This POSIX option
+    assures that different OS-es will return the data in the
+    same POSIX format rather than the native format of the
+    OS being queried.
+    """
+    global sshconfig
+    hostinfo = sshconfig[host]
+
+    cmd = f"""
+        ssh {hostinfo.user}.{hostinfo.hostname}:{hostinfo.port} 'df -P'
+        """
+    try: 
+        result = SloppyTree(dorunrun(cmd, return_datatype = dict))
+        if not result.OK:
+            db.record_error(host, result.code)
+            yield from empty_generator()
+
+        # return the lines, minus the header row, and with the \n chopped off.
+        yield from ( _.strip() for _ in result.stdout.split('\n')[1:] )
+
+    except Exception as e:
+        db.record_error(host, -1)
+        yield from empty_generator()
+    
+
 @trap
 def dfstat_main(myconfig:SloppyTree) -> int:
     """
-    Go demonic.
-    Get the database open.
-    Start querying.
+    Note: passing myconfig as an argument is not necessary in the
+        general case. It is a global. However, when we process
+        a re-read or re-start signal, we want the handler to scoop
+        up the global, and call this function. 
     """
+    global sshconfig
+
+    # Go demonic.
     here=os.getcwd()
     linuxutils.daemonize_me()
     os.chdir(here)
 
-    db = DFStatsDB(myconfig.db)
+    # Read the ssh info. SSHConfig is derived from SloppyTree
+    sshconfig = SSHConfig(myconfig.sshconfig_file)
+
+    # Open the database.
+    db = DFStatsDB(myconfig.database)
+
     while True:
         for host, partitions in db.get_targets():
+            info = extract_df(query_host(host), partitions)
 
         time.sleep(myconfig.time_interval)
 
@@ -264,10 +265,8 @@ if __name__ == '__main__':
 
     myargs = parser.parse_args()
 
-    caught_signals = [  signal.SIGINT, signal.SIGQUIT, signal.SIGHUP,
-                        signal.SIGUSR1, signal.SIGUSR2, signal.SIGRTMIN+1 ]
-
-    for signal in caught_signals:
+    for signal in [ signal.SIGINT, signal.SIGQUIT, signal.SIGHUP,
+                        signal.SIGUSR1, signal.SIGUSR2, signal.SIGRTMIN+1 ]:
         signal.signal(signal, handler)
 
     try:

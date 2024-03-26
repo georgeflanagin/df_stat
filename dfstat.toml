@@ -5,6 +5,11 @@
 database = 'dfstat.db'
 
 ###
+# Location of the ssh config information
+###
+sshconfig_file = './sshconfig'
+
+###
 # Number of seconds between polling.
 ###
 time_interval = 3600

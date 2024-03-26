@@ -33,7 +33,7 @@ if sys.version_info < min_py:
 # From hpclib
 ###
 import netutils
-from   sloppytree import deepsloppy
+from   sloppytree import SloppyTree, deepsloppy
 from   urdecorators import *
 
 ###
@@ -59,16 +59,17 @@ __status__ = 'in progress'
 __license__ = 'MIT'
 
 @singleton
-class SSHConfig(dict):
+class SSHConfig(SloppyTree):
 
     @trap
     def __init__(self, configfile:str):
+        super().__init__()
 
         # Figure out how we are being called and if any of this will work
         # like it should. If called without any arguments, we are just
         # getting information that is already present.
         try:
-            self._config = deepsloppy(netutils.get_ssh_host_info('all', configfile))
+            self.update(deepsloppy(netutils.get_ssh_host_info('all', configfile)))
         except Exception as e:
             print(f"{e=}")
             sys.exit(os.EX_CONFIG)
