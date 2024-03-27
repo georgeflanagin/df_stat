@@ -8,9 +8,9 @@ from   typing import *
 __author__ = 'Alina Enikeeva'
 __copyright__ = 'Copyright 2023, University of Richmond'
 __credits__ = None
-__version__ = 0.1
-__maintainer__ = 'Alina Enikeeva'
-__email__ = 'alina.enikeeva@richmond.edu'
+__version__ = 0.2
+__maintainer__ = 'George Flanagin'
+__email__ = 'gflanagin@richmond.edu'
 __status__ = 'in progress'
 __license__ = 'MIT'
 
@@ -18,7 +18,7 @@ __license__ = 'MIT'
 ###
 # Standard imports, starting with os and sys
 ###
-min_py = (3, 8)
+min_py = (3, 11)
 import os
 import sys
 if sys.version_info < min_py:
@@ -31,19 +31,18 @@ if sys.version_info < min_py:
 import argparse
 from   collections.abc import Generator
 import contextlib
-from   datetime import datetime
 import getpass
 import logging
-import regex as re
+import re
 import signal
 import sqlite3
 import time
+import tomllib
 
 ###
 # Installed libraries
 ###
 import numpy as np
-import pandas as pd
 import statsmodels.api as sm
 # Use Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test
 # to determine if the data is stationary
@@ -58,6 +57,7 @@ from statsmodels.tsa.stattools import adfuller
 # From hpclib
 ###
 from   dorunrun import dorunrun
+import fileutils
 import linuxutils
 from   sloppytree import SloppyTree
 from   sqlitedb import SQLiteDB
@@ -68,17 +68,15 @@ from   urlogger import URLogger
 # imports that are a part of this project
 ###
 from   dfdata import DFStatsDB
-import sshconfig
+from   sshconfig import SSHConfig
 
 ###
 # global objects
 ###
 myconfig  = None
 sshconfig = None
-logger    = URLogger(
-                logfile=f"{os.path.basename(__file__)[:-3]}.log", 
-                level=logging.DEBUG
-                )
+logger    = None
+db        = None
 
 @trap
 def determine_stationarity():
@@ -132,7 +130,7 @@ def extract_df(lines:list, partitions:list) -> object:
     """
     
     d = {}
-    for _0, space, used, available, _1, partition in lines.split('\n'):
+    for _0, space, used, available, _1, partition in lines:
         if partition in partitions:
             d[partition] = [int(space), int(used), int(available)]
  
@@ -203,6 +201,7 @@ def query_host(host:str) -> str:
     OS being queried.
     """
     global sshconfig
+    global db
     hostinfo = sshconfig[host]
 
     cmd = f"""
@@ -212,14 +211,14 @@ def query_host(host:str) -> str:
         result = SloppyTree(dorunrun(cmd, return_datatype = dict))
         if not result.OK:
             db.record_error(host, result.code)
-            yield from null_generator()
+            return []
 
         # return the lines, minus the header row, and with the \n chopped off.
-        yield from ( _.strip() for _ in result.stdout.split('\n')[1:] )
+        return [ _.strip() for _ in result.stdout.split('\n')[1:] ]
 
     except Exception as e:
         db.record_error(host, -1)
-        yield from null_generator()
+        return []
     
 
 @trap
@@ -237,20 +236,27 @@ def dfstat_main(myconfig:SloppyTree) -> int:
         up the global, and call this function. 
     """
     global sshconfig
-
-    # Go demonic.
-    here=os.getcwd()
-    linuxutils.daemonize_me()
-    os.chdir(here)
+    global db
 
     # Read the ssh info. SSHConfig is derived from SloppyTree
-    sshconfig = SSHConfig(myconfig.sshconfig_file)
+    try:
+        sshconfig = SSHConfig(myconfig.sshconfig_file)
+    except Exception as e:
+        print(f"{e=}")
+        sys.exit(os.EX_CONFIG)
 
     # Open the database.
+    # try:
+    #     db = DFStatsDB(myconfig.database)
+    # except Exception as e:
+    #     print(f"{e=}")
+    #     sys.exit(os.EX_CONFIG)
     db = DFStatsDB(myconfig.database)
+    
 
     while True:
-        for host, partitions in db.get_targets():
+        for host, partitions in db.targets.items():
+            print(f"{host=} {partitions=}")
             info = extract_df(query_host(host), partitions)
 
         time.sleep(myconfig.time_interval)
@@ -271,17 +277,30 @@ if __name__ == '__main__':
 
     myargs = parser.parse_args()
 
-    for signal in [ signal.SIGINT, signal.SIGQUIT, signal.SIGHUP,
+    for sig in [ signal.SIGINT, signal.SIGQUIT, signal.SIGHUP,
                         signal.SIGUSR1, signal.SIGUSR2, signal.SIGRTMIN+1 ]:
-        signal.signal(signal, handler)
+        signal.signal(sig, handler)
 
     try:
         with open(myargs.input, 'rb') as f:
             myconfig=SloppyTree(tomllib.load(f))
-    except:
-        print(f"Unable to read config from {myargs.input}")
-        sys.exit(EX_CONFIG)
+    except Exception as e:
+        print(f"{e=}\nUnable to read config from {myargs.input}")
+        sys.exit(os.EX_CONFIG)
     
+    # Go demonic unless we decide not to.
+    if not myargs.no_daemon:
+        here=os.getcwd()
+        linuxutils.daemonize_me()
+        os.chdir(here)
+
+    # Open the logfile here to avoid loss of the filehandle when going
+    # daemonic. The correct process will now create the logfile.
+    logger = URLogger(
+        logfile=f"{os.path.basename(__file__)[:-3]}.log", 
+        level=logging.DEBUG
+        )
+
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
         with contextlib.redirect_stdout(outfile):

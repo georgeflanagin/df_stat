@@ -2,12 +2,12 @@
 # The database contains all the information about hosts and 
 # partitions that this program monitors.
 ###
-database = 'dfstat.db'
+database = './dfstat.db'
 
 ###
 # Location of the ssh config information
 ###
-sshconfig_file = './sshconfig'
+sshconfig_file = '~/.ssh/config'
 
 ###
 # Number of seconds between polling.

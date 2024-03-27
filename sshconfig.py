@@ -32,6 +32,7 @@ if sys.version_info < min_py:
 ###
 # From hpclib
 ###
+import fileutils
 import netutils
 from   sloppytree import SloppyTree, deepsloppy
 from   urdecorators import *
@@ -68,11 +69,14 @@ class SSHConfig(SloppyTree):
         # Figure out how we are being called and if any of this will work
         # like it should. If called without any arguments, we are just
         # getting information that is already present.
-        try:
-            self.update(deepsloppy(netutils.get_ssh_host_info('all', configfile)))
-        except Exception as e:
-            print(f"{e=}")
-            sys.exit(os.EX_CONFIG)
+        # try:
+        #     self.update(netutils.get_ssh_host_info('all', configfile))
+        # except Exception as e:
+        #     print(f"{e=}")
+        #     raise
+        #     sys.exit(os.EX_CONFIG)
+        data = SloppyTree(netutils.get_ssh_host_info('all', fileutils.expandall(configfile)))
+        self = data
          
 
 

@@ -73,7 +73,7 @@ SQL = SloppyTree({
 
 class DFStatsDB:
     
-    def __init__(db_name:str) -> None:
+    def __init__(self, db_name:str) -> None:
         """
         Build a class member for the database. This way,
         we get the benefit of any decorators or special
@@ -82,11 +82,11 @@ class DFStatsDB:
         self.db = sqlitedb.SQLiteDB(db_name)
 
 
-    def cleanup(window_size:int) -> int:
+    def cleanup(self, window_size:int) -> int:
         return self.db.execute_SQL(SQL.cleanup)
 
 
-    def recent_records(host:str, partition:str, window_size:int) -> pandas.DataFrame:
+    def recent_records(self, host:str, partition:str, window_size:int) -> pandas.DataFrame:
         """
         Get the recent data for the statistical analysis.
         """
@@ -95,11 +95,12 @@ class DFStatsDB:
             self.db.execute_SQL(SQL.recent_by_host, host, window_size) )
 
 
-    def record_error(host:str, code:int) -> int:
+    def record_error(self, host:str, code:int) -> int:
         return self.db.execute_SQL(SQL.error, host, code)
 
 
-    def record_measurement(host:str, 
+    def record_measurement(self,
+            host:str, 
             partition:Iterable, 
             size:Iterable, 
             free:Iterable) -> int:
@@ -114,14 +115,15 @@ class DFStatsDB:
                 zip(host, partition, size, free))
 
 
-    def targets() -> dict:
+    @property
+    def targets(self) -> dict:
         """
         Get a list of everything we need to monitor. For maximum
         ease of querying the target computers, the data are
         returned with host as the key and a tuple of partitions
         as the value.
         """
-        data = self.db.execute_SQL(SQL.targets())
+        data = self.db.execute_SQL(SQL.targets)
         organized_data = collections.defaultdict(list)
         for k, v in ( row for row in data.itertuples(index=False) ):
             organized_data[k].append(v)
