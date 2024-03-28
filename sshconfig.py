@@ -75,9 +75,10 @@ class SSHConfig(SloppyTree):
         #     print(f"{e=}")
         #     raise
         #     sys.exit(os.EX_CONFIG)
-        data = SloppyTree(netutils.get_ssh_host_info('all', fileutils.expandall(configfile)))
-        self = data
+        self.update(netutils.get_ssh_host_info('all', fileutils.expandall(configfile)))
          
+    def __call__(self):
+        return SloppyTree(self)
 
 
 

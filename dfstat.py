@@ -130,10 +130,12 @@ def extract_df(lines:list, partitions:list) -> object:
     """
     
     d = {}
-    for _0, space, used, available, _1, partition in lines:
+    for line in lines:
+        _0, space, used, available, _1, partition = line.split()
         if partition in partitions:
             d[partition] = [int(space), int(used), int(available)]
- 
+            logger.debug(f'{partition=} {space=} {used=} {available=}')
+
     return d
     
 
@@ -169,7 +171,7 @@ def handler(signum:int, stack:object=None) -> None:
         dfstat_main(myconfig)
 
     elif signum in [ signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
-        logger.info('Closing up.')
+        logger.info(f'Closing up from signal {signum}')
         fileutils.fclose_all()
         sys.exit(os.EX_OK)
 
@@ -202,10 +204,10 @@ def query_host(host:str) -> str:
     """
     global sshconfig
     global db
-    hostinfo = sshconfig[host]
+    hostinfo = SloppyTree(sshconfig[host])
 
     cmd = f"""
-        ssh {hostinfo.user}.{hostinfo.hostname}:{hostinfo.port} 'df -P'
+        ssh {hostinfo.user}@{hostinfo.hostname} 'df -P'
         """
     try: 
         result = SloppyTree(dorunrun(cmd, return_datatype = dict))
@@ -240,9 +242,9 @@ def dfstat_main(myconfig:SloppyTree) -> int:
 
     # Read the ssh info. SSHConfig is derived from SloppyTree
     try:
-        sshconfig = SSHConfig(myconfig.sshconfig_file)
+        sshconfig = SSHConfig(fileutils.expandall(myconfig.sshconfig_file))()
     except Exception as e:
-        print(f"{e=}")
+        logger.error(f'{e=} Cannot open {myconfig.sshconfig_file}')
         sys.exit(os.EX_CONFIG)
 
     # Open the database.
@@ -256,8 +258,9 @@ def dfstat_main(myconfig:SloppyTree) -> int:
 
     while True:
         for host, partitions in db.targets.items():
-            print(f"{host=} {partitions=}")
+            logger.debug(f"{host=} {partitions=}")
             info = extract_df(query_host(host), partitions)
+            
 
         time.sleep(myconfig.time_interval)
 
@@ -274,8 +277,11 @@ if __name__ == '__main__':
         help="run in the foreground (aids debugging)")
     parser.add_argument('-o', '--output', type=str, default="",
         help="Output file name")
+    parser.add_argument('-z', '--zap', action='store_true',
+        help="remove old logfile.")
 
     myargs = parser.parse_args()
+    logfile=f"{os.path.basename(__file__)[:-3]}.log" 
 
     for sig in [ signal.SIGINT, signal.SIGQUIT, signal.SIGHUP,
                         signal.SIGUSR1, signal.SIGUSR2, signal.SIGRTMIN+1 ]:
@@ -294,12 +300,19 @@ if __name__ == '__main__':
         linuxutils.daemonize_me()
         os.chdir(here)
 
+        
+
     # Open the logfile here to avoid loss of the filehandle when going
     # daemonic. The correct process will now create the logfile.
-    logger = URLogger(
-        logfile=f"{os.path.basename(__file__)[:-3]}.log", 
-        level=logging.DEBUG
-        )
+    if myargs.zap:
+        try:
+            os.unlink(logfile)
+        except:
+            pass
+
+    logger = URLogger(logfile=logfile, level=logging.DEBUG)
+
+    logger.info('+++ BEGIN +++')
 
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
@@ -307,5 +320,5 @@ if __name__ == '__main__':
             sys.exit(globals()[f"{os.path.basename(__file__)[:-3]}_main"](myconfig))
 
     except Exception as e:
-        print(f"Escaped or re-raised exception: {e}")
+        logger.error(f"Escaped or re-raised exception: {e=}")
 
