@@ -134,7 +134,7 @@ def extract_df(lines:list, partitions:list) -> object:
         _0, space, used, available, _1, partition = line.split()
         if partition in partitions:
             d[partition] = [int(space), int(used), int(available)]
-            logger.debug(f'{partition=} {space=} {used=} {available=}')
+            print(f'{partition=} {space=} {used=} {available=}')
 
     return d
     
@@ -260,7 +260,7 @@ def dfstat_main(myconfig:SloppyTree) -> int:
         for host, partitions in db.targets.items():
             logger.debug(f"{host=} {partitions=}")
             info = extract_df(query_host(host), partitions)
-            
+            print(info)
 
         time.sleep(myconfig.time_interval)
 
