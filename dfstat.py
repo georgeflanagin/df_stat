@@ -67,6 +67,7 @@ from   urlogger import URLogger
 ###
 # imports that are a part of this project
 ###
+from   dfanalysis import dfanalysis_main
 from   dfdata import DFStatsDB
 from   sshconfig import SSHConfig
 
@@ -77,6 +78,7 @@ myconfig  = None
 sshconfig = None
 logger    = None
 db        = None
+my_kids   = set()
 
 @trap
 def determine_stationarity():
@@ -157,6 +159,33 @@ def fiscaldaemon_events() -> int:
     fileutils.fclose_all()
     mylogger.info('All files closed')
     return os.EX_OK
+
+
+@trap
+def graceful_exit() -> int:
+    """
+    Close everything, and leave.
+    """
+    global my_kids, db
+
+    ###
+    # The first thing we do, let's kill all the children.
+    #         -- Dick the Butcher, King Henry VI
+    ###
+    for pid in my_kids:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except:
+            pass
+
+    try:
+        db.close()
+    except:
+        pass
+
+    fileutils.fclose_all()
+    if os.isatty(1): return os.EX_OK
+    os._exit(os.EX_OK)
 
 
 @trap
@@ -255,15 +284,23 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     #     sys.exit(os.EX_CONFIG)
     db = DFStatsDB(myconfig.database)
     
+    # Kick off the analyzer
+    if not (pid := os.fork()):
+        dfanalysis_main()
 
-    while True:
-        for host, partitions in db.targets.items():
-            logger.debug(f"{host=} {partitions=}")
-            info = extract_df(query_host(host), partitions)
-            print(info)
+    my_kids.add(pid)
 
-        time.sleep(myconfig.time_interval)
+    try:
+        while True:
+            for host, partitions in db.targets.items():
+                logger.debug(f"{host=} {partitions=}")
+                info = extract_df(query_host(host), partitions)
+                print(info)
 
+            time.sleep(myconfig.time_interval)
+    finally:
+        return graceful_exit()
+        
 
 
 if __name__ == '__main__':
