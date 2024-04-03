@@ -19,6 +19,7 @@ if sys.version_info < min_py:
 import argparse
 import contextlib
 import getpass
+import signal
 
 ###
 # From hpclib
@@ -69,6 +70,10 @@ def run_analysis() -> None
 @trap
 def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
 
+    for sig in [ signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
+        signal.signal(sig, handler)
+
+
     while True:
         run_analysis()
         time.sleep(3600)
@@ -89,7 +94,6 @@ if __name__ == '__main__':
         help="Niceness may affect execution time.")
     parser.add_argument('-v', '--verbose', action='store_true',
         help="Be chatty about what is taking place")
-
 
     myargs = parser.parse_args()
     myargs.verbose and linuxutils.dump_cmdline(myargs)
