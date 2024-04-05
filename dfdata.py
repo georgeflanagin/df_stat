@@ -114,6 +114,20 @@ class DFStatsDB:
             return self.db.executemany_SQL(SQL.measurement, 
                 zip(host, partition, size, free))
 
+    
+    def populate_db(self, sql_statements_file):
+        """
+        Create tables and views, execute basic inserts.
+        """
+        print(self.db)
+        with open(sql_statements_file, "r") as f:
+            sql_statements = f.readlines()
+            print(sql_statements)
+            for statement in sql_statements: 
+                print(statement)
+                self.db.execute_SQL(statement) 
+        print(sql_statements)
+
 
     @property
     def targets(self) -> dict:

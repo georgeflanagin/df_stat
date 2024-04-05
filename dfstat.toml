@@ -7,7 +7,7 @@ database = './dfstat.db'
 ###
 # Location of the ssh config information
 ###
-sshconfig_file = '~/.ssh/config'
+sshconfig_file = '/home/alina/df_stat/myconfig'
 
 ###
 # Number of seconds between polling.
@@ -22,7 +22,7 @@ window_size = 50
 ###
 # Where to send the alarms.
 ###
-notification_address = [ 'hpc@richmond.edu', '8043992699' ]
+notification_address = [ 'hpc@richmond.edu', '8044959650@vtext.com' ]
 
 ###
 # Parameters for statistical analysis
