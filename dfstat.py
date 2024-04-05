@@ -130,7 +130,6 @@ def extract_df(lines:list, partitions:list) -> object:
     /dev/md125                      1343253684 135131388 1208122296      11% /oldhome
     141.166.186.35:/mnt/usrlocal/8  3766283008 263690368 3502592640       8% /usr/local/chem.sw
     """
-    
     d = {}
     for line in lines:
         _0, space, used, available, _1, partition = line.split()
@@ -234,12 +233,12 @@ def query_host(host:str) -> str:
     global sshconfig
     global db
     hostinfo = SloppyTree(sshconfig[host])
-
     cmd = f"""
         ssh {hostinfo.user}@{hostinfo.hostname} 'df -P'
         """
     try: 
         result = SloppyTree(dorunrun(cmd, return_datatype = dict))
+        
         if not result.OK:
             db.record_error(host, result.code)
             return []
@@ -272,6 +271,7 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     # Read the ssh info. SSHConfig is derived from SloppyTree
     try:
         sshconfig = SSHConfig(fileutils.expandall(myconfig.sshconfig_file))()
+        print(sshconfig)
     except Exception as e:
         logger.error(f'{e=} Cannot open {myconfig.sshconfig_file}')
         sys.exit(os.EX_CONFIG)
@@ -295,7 +295,8 @@ def dfstat_main(myconfig:SloppyTree) -> int:
             for host, partitions in db.targets.items():
                 logger.debug(f"{host=} {partitions=}")
                 info = extract_df(query_host(host), partitions)
-                print(info)
+                for partition, values in info.items():
+                    db.record_measurement(host, partition, values[1], values[2])
 
             time.sleep(myconfig.time_interval)
     finally:
@@ -310,6 +311,8 @@ if __name__ == '__main__':
 
     parser.add_argument('-i', '--input', type=str, default="dfstat.toml",
         help="toml file with the config info.")
+    parser.add_argument('--sql', type=str, default="dfstat.sql",
+        help="sql statements to populate the database.")
     parser.add_argument('--no-daemon', action='store_true',
         help="run in the foreground (aids debugging)")
     parser.add_argument('-o', '--output', type=str, default="",

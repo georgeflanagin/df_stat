@@ -88,7 +88,7 @@ if __name__ == "__main__":
     try:
         config_instance = SSHConfig(sys.argv[1])
     except:
-        config_instance = SSHConfig('~/.ssh/config')
+        config_instance = SSHConfig('/home/alina/df_stat/myconfig')
 
     t = config_instance
     print(t)
