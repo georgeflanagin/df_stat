@@ -217,8 +217,12 @@ def query_host(host:str) -> str:
         return [ _.strip() for _ in result.stdout.split('\n')[1:] ]
 
     except Exception as e:
-        db.record_error(host, -1)
-        return []
+        # another try-except to avoid foreign key constraint error,
+        # that is related to a wrong host name
+        try:
+            db.record_error(host, -1)
+        except:
+            return []
     
 
 @trap
@@ -257,15 +261,15 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     #db.populate_db(myargs.sql)
 
     #while True:
-    for host, partitions in db.targets.items():
-        logger.debug(f"{host=} {partitions=}")
-        print("query", query_host(host))
-        print("host", host)
-        info = extract_df(query_host("aa"), partitions)
-        print("info", info)
-        
-        for partition, values in info.items():
-            db.record_measurement(host, partition, values[1], values[2])
+    try:
+        for host, partitions in db.targets.items():
+            logger.debug(f"{host=} {partitions=}")
+            info = extract_df(query_host(host), partitions)
+            
+            for partition, values in info.items():
+                db.record_measurement(host, partition, values[1], values[2])
+    except Exception as e:
+        print(f"Something went wrong: {e}.")
 
     time.sleep(myconfig.time_interval)
 
