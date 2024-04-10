@@ -266,7 +266,8 @@ def HELP() -> None:
         SIGNALs:
         --------
 
-        SIGHUP, SIGUSR1 -- request to take measurements NOW.
+        SIGHUP, SIGUSR1 -- request to take measurements NOW. This does not affect
+            regular measurements at intervals given in the toml file. 
 
         SIGQUIT, SIGTERM, SIGUSR2 -- do a graceful shutdown of dfstat and the
             dfanalysis daemon (if it is running). 
