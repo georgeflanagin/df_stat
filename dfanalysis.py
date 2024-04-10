@@ -119,6 +119,22 @@ def determine_stationarity():
 
 
 @trap
+def is_mem_drop(dir: str) -> bool:
+    """
+    Compare last two entries for filesystem 
+    and return True if the previous entry is higher than the 
+    current one - f(then) > f(now). That way we will determine that 
+    there is a drop in memory rather than the rise. 
+    """
+    SQL_select = f"""SELECT memavail FROM df_stat WHERE directory = '{dir}' ORDER BY datetime DESC LIMIT 2"""
+    result = db.execute_SQL(SQL_select, we_have_pandas=True)
+    mem_then = result.values[0][0]
+    mem_now = result.values[1][0]
+    if mem_then > mem_now:
+        return True
+
+
+@trap
 def fiscaldaemon_events() -> int:
     """
     This is the event loop.
@@ -140,6 +156,7 @@ def fiscaldaemon_events() -> int:
 
 @trap
 def run_analysis() -> None:
+    logger.debug("run_analysis")
     return
 
 
@@ -148,7 +165,15 @@ def run_analysis() -> None:
 def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
     global logger
 
-    for sig in [ signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
+    # Set up to ignore all signals, ....
+    for sig in range(0, signal.SIGRTMAX):
+        try:
+            signal.signal(sig, SIGIGN)
+        except:
+            pass
+
+    # Except for these:
+    for sig in [ signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGTERM, signal.SIGQUIT, signal.SIGINT ]:
         signal.signal(sig, handler)
 
     logfile=f"{os.path.basename(__file__)[:-3]}.log" 

@@ -42,16 +42,7 @@ import tomllib
 ###
 # Installed libraries
 ###
-import numpy as np
-import statsmodels.api as sm
-# Use Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test
-# to determine if the data is stationary
-# if p-value of the test is less than 0.05, then
-# the data isn't stationary (it has significant changes)
-# and, hence, hpc@richmond.edu needs to be informed.
-from statsmodels.tsa.stattools import kpss
 mynetid = getpass.getuser()
-from statsmodels.tsa.stattools import adfuller
 
 ###
 # From hpclib
@@ -100,7 +91,7 @@ def extract_df(lines:list, partitions:list) -> object:
         logger.debug(f"{partition=}")
         if partition in partitions:
             d[partition] = [int(space), int(used), int(available)]
-            print(f'{partition=} {space=} {used=} {available=}')
+            logger.debug(f'{partition=} {space=} {used=} {available=}')
 
     return d
     
@@ -145,29 +136,13 @@ def handler(signum:int, stack:object=None) -> None:
     if signum in [ signal.SIGHUP, signal.SIGUSR1 ]: 
         dfstat_main(myconfig)
 
-    elif signum in [ signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
+    elif signum in [ signal.SIGUSR2, signal.SIGQUIT, signal.SIGTERM, signal.SIGINT ]:
         logger.info(f'Closing up from signal {signum}')
         fileutils.fclose_all()
         sys.exit(os.EX_OK)
 
     else:
         return
-
-@trap
-def is_mem_drop(dir: str) -> bool:
-    """
-    Compare last two entries for filesystem 
-    and return True if the previous entry is higher than the 
-    current one - f(then) > f(now). That way we will determine that 
-    there is a drop in memory rather than the rise. 
-    """
-    SQL_select = f"""SELECT memavail FROM df_stat WHERE directory = '{dir}' ORDER BY datetime DESC LIMIT 2"""
-    result = db.execute_SQL(SQL_select, we_have_pandas=True)
-    mem_then = result.values[0][0]
-    mem_now = result.values[1][0]
-    if mem_then > mem_now:
-        return True
-
 
 @trap
 def query_host(host:str) -> str:
@@ -212,7 +187,7 @@ def null_generator():
 
 
 @trap
-def dfstat_main(myconfig:SloppyTree) -> int:
+def dfstat_main(myconfig:SloppyTree, analyze_this:bool) -> int:
     """
     Note: passing myconfig as an argument is not necessary in the
         general case. It is a global. However, when we process
@@ -224,7 +199,9 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     global logger
     logger.debug("main")
 
+    ###
     # Read the ssh info. SSHConfig is derived from SloppyTree
+    ###
     try:
         sshconfig = SSHConfig(fileutils.expandall(myconfig.sshconfig_file))()
     except Exception as e:
@@ -233,16 +210,10 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     else:
         logger.debug(f"{sshconfig=}")
 
-    # Open the database.
-    # try:
-    #     db = DFStatsDB(myconfig.database)
-    # except Exception as e:
-    #     print(f"{e=}")
-    #     sys.exit(os.EX_CONFIG)
-    db = DFStatsDB(myconfig.database)
-    
+    ###
     # Kick off the analyzer
-    if not (pid := os.fork()):
+    ###
+    if analyze_this and not (pid := os.fork()):
         dfanalysis_main()
 
     my_kids.add(pid)
@@ -250,7 +221,6 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     try:
         while True:
             for host, partitions in db.targets.items():
-                logger.debug(f"{host=} {partitions=}")
                 info = extract_df(query_host(host), partitions)
                 for partition, values in info.items():
                     db.record_measurement(host, partition, values[1], values[2])
@@ -260,16 +230,63 @@ def dfstat_main(myconfig:SloppyTree) -> int:
         return graceful_exit()
         
 
+def HELP() -> None:
+    """
+    Better help.
+         1         2         3         4         5         6         7         8          
+    """
+    print("""
+        dfstat is a program to monitor available disk space on one or more 
+            (remote) computers. You can monitor the space on *this* computer 
+            also, but you can do that without this daemon, right?
+
+        Command line options:
+        ---------------------
+
+        -i, --input {name-of-.toml-file}
+            Defaults to dfstat.toml in the current directory.
+
+        -L, --loglevel {10, 20, 30, 40, 50}
+            Sets the loglevel. 10 logs everything. 50 only logs errors.
+
+        --no-analysis 
+            If present, the analysis daemon is *NOT* launched. The purpose is to 
+            allow relaunch of dfstat when the analysis daemon is already running.
+
+        --no-daemon 
+            If present, the program will run in the foreground. This is primarily
+            for development and debugging.
+
+        -o, --output {outfile-name}
+            Redirects to a file other than stdout, the default.
+
+        -z, --zap
+            If present, removes any old log files.
+
+        SIGNALs:
+        --------
+
+        SIGHUP, SIGUSR1 -- request to take measurements NOW.
+
+        SIGQUIT, SIGTERM, SIGUSR2 -- do a graceful shutdown of dfstat and the
+            dfanalysis daemon (if it is running). 
+
+        Other signals are ignored.
+            
+    """)
 
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(prog="dfstat", 
+        add_help=False,
         description="What dfstat does, dfstat does best.")
 
+    parser.add_argument('-?', '-h', '--help', action='store_true')
     parser.add_argument('-i', '--input', type=str, default="dfstat.toml",
         help="toml file with the config info.")
-    parser.add_argument('--sql', type=str, default="dfstat.sql",
-        help="sql statements to populate the database.")
+    parser.add_argument('-L', '--loglevel', type=int, default=logging.INFO,
+        choices=range(50,0,-10))
+    parser.add_argument('--no-analysis', action='store_true')
     parser.add_argument('--no-daemon', action='store_true',
         help="run in the foreground (aids debugging)")
     parser.add_argument('-o', '--output', type=str, default="",
@@ -278,12 +295,28 @@ if __name__ == '__main__':
         help="remove old logfile.")
 
     myargs = parser.parse_args()
-    logfile=f"{os.path.basename(__file__)[:-3]}.log" 
 
-    for sig in [ signal.SIGINT, signal.SIGQUIT, signal.SIGHUP,
-                        signal.SIGUSR1, signal.SIGUSR2, signal.SIGRTMIN+1 ]:
+    # Abandon if the user is just requesting help.
+    if myargs.help:
+        HELP()
+        sys.exit(os.EX_OK)
+
+    logfile=f"{os.path.basename(__file__)[:-3]}.log" 
+    analyze_this = not myargs.no_analysis
+    
+    # ignore all signals.
+    for sig in range(0, signal.SIGRTMAX):
+        try:
+            signal.signal(sig, SIGIGN)
+        except:
+            pass
+
+    # except for these signals, which we handle.
+    for sig in [ signal.SIGINT, signal.SIGQUIT, signal.SIGTERM, signal.SIGHUP,
+                        signal.SIGUSR1, signal.SIGUSR2 ]:
         signal.signal(sig, handler)
 
+    # Read the configuration information. 
     try:
         with open(myargs.input, 'rb') as f:
             myconfig=SloppyTree(tomllib.load(f))
@@ -291,15 +324,26 @@ if __name__ == '__main__':
         print(f"{e=}\nUnable to read config from {myargs.input}")
         sys.exit(os.EX_CONFIG)
     
-    # Go demonic unless we decide not to.
+    ###
+    # See if the database is present.
+    ###
+    if os.path.exists(myconfig.database):
+        db = DFStatsDB(myconfig.database)
+    else:
+        print(f"{myconfig.database} not found.")
+        sys.exit(os.EX_DATAERR)
+    
+    ###
+    # Go demonic unless we decide not to. We probably want to know
+    # our PID in that case.
+    ###
     if not myargs.no_daemon:
         here=os.getcwd()
+        print("Launching dfstat daemon.")
         linuxutils.daemonize_me()
         os.chdir(here)
     else:
-        print(f"{os.getpid()=}")
-
-        
+        print(f"PID = {os.getpid()}")
 
     # Open the logfile here to avoid loss of the filehandle when going
     # daemonic. The correct process will now create the logfile.
@@ -309,14 +353,13 @@ if __name__ == '__main__':
         except:
             pass
 
-    logger = URLogger(logfile=logfile, level=logging.DEBUG)
-
+    logger = URLogger(logfile=logfile, level=myargs.loglevel)
     logger.info('+++ BEGIN +++')
 
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
         with contextlib.redirect_stdout(outfile):
-            sys.exit(globals()[f"{os.path.basename(__file__)[:-3]}_main"](myconfig))
+            sys.exit(globals()[f"{os.path.basename(__file__)[:-3]}_main"](myconfig, analyze_this))
 
     except Exception as e:
         logger.error(f"Escaped or re-raised exception: {e=}")
