@@ -81,44 +81,6 @@ db        = None
 my_kids   = set()
 
 @trap
-def determine_stationarity():
-    """
-    This method uses KPSS test to determine data non-stationarity.
-    Data is non-stationary if
-        1. Test Statistic > Critical Value
-        2. p-value < 0.05
-    If data is non-stationary, send email to hpc@richmond.edu
-    """
-    info = extract_df()
-    for dir, _ in info.items():
-        ### Conduct test for each directory
-        select_SQL = f"""SELECT * FROM df_stat WHERE directory = '{dir}';"""
-        df = db.execute_SQL(select_SQL, we_have_pandas=True) 
-
-        # specify regression as ct to determine that null hypothesis is 
-        # that the data is stationary
-        # add noise to data so that KPSS statistics calculates results 
-        clean_data = df["memavail"].astype(float) 
-        mu, sigma = 0, 0.1 
-        noise = np.random.normal(mu, sigma, [1, df.shape[0]])
-        data_with_noise = clean_data + noise[0]
-        statistic, p_value, n_lags, critical_values = kpss(data_with_noise, regression ='ct', store = True)
-    
-        # debug output
-        print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
-
-        ### send email if data is non-stationary and if there is memory drop
-        if (p_value < 0.05) and is_mem_drop(dir):
-            subject = f"'Check {dir}, there might be a disk space drop.'"
-            # send email in the background
-            cmd = f"nohup mailx -s {subject}  '{myargs.email}' /dev/null 2>&1 &"
-            dorunrun(cmd)
-        #except:
-        #    return
-    return
-
-
-@trap
 def extract_df(lines:list, partitions:list) -> object:
     """
     This command extracts values from df -P query. The unparsed data 
@@ -130,35 +92,18 @@ def extract_df(lines:list, partitions:list) -> object:
     /dev/md125                      1343253684 135131388 1208122296      11% /oldhome
     141.166.186.35:/mnt/usrlocal/8  3766283008 263690368 3502592640       8% /usr/local/chem.sw
     """
+    global logger
+    logger.debug("extract_df")
     d = {}
     for line in lines:
         _0, space, used, available, _1, partition = line.split()
+        logger.debug(f"{partition=}")
         if partition in partitions:
             d[partition] = [int(space), int(used), int(available)]
             print(f'{partition=} {space=} {used=} {available=}')
 
     return d
     
-
-@trap
-def fiscaldaemon_events() -> int:
-    """
-    This is the event loop.
-    """
-    global myargs, mylogger
-
-    found_stop_event = False
-
-    while True:
-        determine_stationarity()
-        time.sleep(myargs.timeinterval)
-        insert_in_db()
-        delete_older_entries()
-
-    fileutils.fclose_all()
-    mylogger.info('All files closed')
-    return os.EX_OK
-
 
 @trap
 def graceful_exit() -> int:
@@ -194,6 +139,8 @@ def handler(signum:int, stack:object=None) -> None:
     SIGUSR2 and the other common signals to an orderly
     shutdown. 
     """
+    global logger
+    logger.debug("handler")
     global myconfig
     if signum in [ signal.SIGHUP, signal.SIGUSR1 ]: 
         dfstat_main(myconfig)
@@ -232,7 +179,10 @@ def query_host(host:str) -> str:
     """
     global sshconfig
     global db
+    global logger
+    logger.debug(f"query_host {host=}")
     hostinfo = SloppyTree(sshconfig[host])
+    logger.debug(f"{hostinfo=}")
     cmd = f"""
         ssh {hostinfo.user}@{hostinfo.hostname} 'df -P'
         """
@@ -240,14 +190,18 @@ def query_host(host:str) -> str:
         result = SloppyTree(dorunrun(cmd, return_datatype = dict))
         
         if not result.OK:
+            logger.error(f"{result=}")
             db.record_error(host, result.code)
             return []
 
         # return the lines, minus the header row, and with the \n chopped off.
-        return [ _.strip() for _ in result.stdout.split('\n')[1:] ]
+        result = [ _.strip() for _ in result.stdout.split('\n')[1:] ]
+        logger.debug("{result=}")
+        return result
 
     except Exception as e:
         db.record_error(host, -1)
+        logger.error(f"{e=}")
         return []
     
 
@@ -267,14 +221,17 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     """
     global sshconfig
     global db
+    global logger
+    logger.debug("main")
 
     # Read the ssh info. SSHConfig is derived from SloppyTree
     try:
         sshconfig = SSHConfig(fileutils.expandall(myconfig.sshconfig_file))()
-        print(sshconfig)
     except Exception as e:
         logger.error(f'{e=} Cannot open {myconfig.sshconfig_file}')
         sys.exit(os.EX_CONFIG)
+    else:
+        logger.debug(f"{sshconfig=}")
 
     # Open the database.
     # try:
@@ -339,6 +296,8 @@ if __name__ == '__main__':
         here=os.getcwd()
         linuxutils.daemonize_me()
         os.chdir(here)
+    else:
+        print(f"{os.getpid()=}")
 
         
 

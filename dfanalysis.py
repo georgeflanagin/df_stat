@@ -19,13 +19,31 @@ if sys.version_info < min_py:
 import argparse
 import contextlib
 import getpass
+import logging
 import signal
+import time
+
+###
+# Installed libraries
+###
+import numpy as np
+import statsmodels.api as sm
+# Use Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test
+# to determine if the data is stationary
+# if p-value of the test is less than 0.05, then
+# the data isn't stationary (it has significant changes)
+# and, hence, hpc@richmond.edu needs to be informed.
+from statsmodels.tsa.stattools import kpss
+mynetid = getpass.getuser()
+from statsmodels.tsa.stattools import adfuller
 
 ###
 # From hpclib
 ###
+import fileutils
 import linuxutils
 from   urdecorators import show_exceptions_and_frames as trap
+from   urlogger import URLogger
 
 ###
 # Credits
@@ -40,7 +58,7 @@ __status__ = 'in progress'
 __license__ = 'MIT'
 
 mynetid = getpass.getuser()
-
+logger = None
 
 @trap
 def handler(signum:int, stack:object=None) -> None:
@@ -49,6 +67,7 @@ def handler(signum:int, stack:object=None) -> None:
     SIGUSR2 and the other common signals to an orderly
     shutdown. 
     """
+    global logger
     if signum in [ signal.SIGHUP, signal.SIGUSR1 ]: 
         dfanalysis_main()
 
@@ -60,19 +79,80 @@ def handler(signum:int, stack:object=None) -> None:
     else:
         return
 
+@trap
+def determine_stationarity():
+    """
+    This method uses KPSS test to determine data non-stationarity.
+    Data is non-stationary if
+        1. Test Statistic > Critical Value
+        2. p-value < 0.05
+    If data is non-stationary, send email to hpc@richmond.edu
+    """
+    info = extract_df()
+    for dir, _ in info.items():
+        ### Conduct test for each directory
+        select_SQL = f"""SELECT * FROM df_stat WHERE directory = '{dir}';"""
+        df = db.execute_SQL(select_SQL, we_have_pandas=True) 
+
+        # specify regression as ct to determine that null hypothesis is 
+        # that the data is stationary
+        # add noise to data so that KPSS statistics calculates results 
+        clean_data = df["memavail"].astype(float) 
+        mu, sigma = 0, 0.1 
+        noise = np.random.normal(mu, sigma, [1, df.shape[0]])
+        data_with_noise = clean_data + noise[0]
+        statistic, p_value, n_lags, critical_values = kpss(data_with_noise, regression ='ct', store = True)
+    
+        # debug output
+        print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
+
+        ### send email if data is non-stationary and if there is memory drop
+        if (p_value < 0.05) and is_mem_drop(dir):
+            subject = f"'Check {dir}, there might be a disk space drop.'"
+            # send email in the background
+            cmd = f"nohup mailx -s {subject}  '{myargs.email}' /dev/null 2>&1 &"
+            dorunrun(cmd)
+        #except:
+        #    return
+    return
+
+
 
 @trap
-def run_analysis() -> None
+def fiscaldaemon_events() -> int:
+    """
+    This is the event loop.
+    """
+    global myargs, logger
+
+    found_stop_event = False
+
+    while True:
+        determine_stationarity()
+        time.sleep(myargs.timeinterval)
+        insert_in_db()
+        delete_older_entries()
+
+    fileutils.fclose_all()
+    logger.info('All files closed')
+    return os.EX_OK
+
+
+@trap
+def run_analysis() -> None:
     return
 
 
 
 @trap
 def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
+    global logger
 
     for sig in [ signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
         signal.signal(sig, handler)
 
+    logfile=f"{os.path.basename(__file__)[:-3]}.log" 
+    logger = URLogger(logfile=logfile, level=logging.DEBUG)
 
     while True:
         run_analysis()
