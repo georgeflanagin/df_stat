@@ -15,6 +15,11 @@ sshconfig_file = '~/.ssh/config'
 time_interval = 3600
 
 ###
+# Down reporting: this is the number of consecutive times that
+# a host can be non-responsive before we report it as down.
+###
+
+###
 # Number of samples in the current window.
 ###
 window_size = 50

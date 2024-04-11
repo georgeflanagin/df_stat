@@ -213,10 +213,11 @@ def dfstat_main(myconfig:SloppyTree, analyze_this:bool) -> int:
     ###
     # Kick off the analyzer
     ###
-    if analyze_this and not (pid := os.fork()):
-        dfanalysis_main()
-
-    my_kids.add(pid)
+    if analyze_this:
+        if (pid := os.fork()):
+            dfanalysis_main()
+        else:
+            my_kids.add(pid)
 
     try:
         while True:
