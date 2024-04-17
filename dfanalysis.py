@@ -18,6 +18,7 @@ if sys.version_info < min_py:
 ###
 import argparse
 import contextlib
+import datetime
 import getpass
 import logging
 import signal
@@ -26,6 +27,7 @@ import time
 ###
 # Installed libraries
 ###
+import pandas
 import numpy as np
 import statsmodels.api as sm
 # Use Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test
@@ -58,7 +60,7 @@ __status__ = 'in progress'
 __license__ = 'MIT'
 
 mynetid = getpass.getuser()
-logger = None
+from dfstat import myconfig, logger, db
 
 @trap
 def handler(signum:int, stack:object=None) -> None:
@@ -78,6 +80,11 @@ def handler(signum:int, stack:object=None) -> None:
 
     else:
         return
+
+@trap
+def analyze_diskspace(frame:pandas.DataFrame) -> None:
+    pass
+
 
 @trap
 def determine_stationarity():
@@ -115,7 +122,6 @@ def determine_stationarity():
         #except:
         #    return
     return
-
 
 
 @trap
@@ -156,14 +162,34 @@ def fiscaldaemon_events() -> int:
 
 @trap
 def run_analysis() -> None:
-    logger.debug("run_analysis")
-    return
+    """
+    We need to get the recent records, where recent is defined as
+    more recent than a cutoff value related to the measurement
+    interval. IOW, the last "N" values.
+    """
+    global myconfig
 
+    logger.debug("run_analysis")
+    seconds_ago = myconfig.time_interval * myconfig.window_size
+    starttime = timestamp_to_sqlite(time.time() - seconds_ago)
+       
+    SQL = f"""
+        SELECT * from v_recent_measurements where measured_at > "{starttime}"
+        """
+    frame = pandas.read_sql(SQL, db())
+    for host_frame in ( group for _, group in frame.groupby('host') ):
+        for partition_frame in ( group for _, group in host_frame.groupby('partition') ):
+            analyze_diskspace(partition_frame)
+
+@trap
+def timestamp_to_sqlite(t:int) -> str:
+    return datetime.datetime.utcfromtimestamp(int(t)).strftime('%Y-%m-%d %H:%M:%S')
 
 
 @trap
 def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
     global logger
+    global myconfig
 
     # Set up to ignore all signals, ....
     for sig in range(0, signal.SIGRTMAX):
@@ -181,7 +207,7 @@ def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
 
     while True:
         run_analysis()
-        time.sleep(3600)
+        time.sleep(myconfig.time_interval)
 
     return os.EX_OK
 

@@ -58,18 +58,71 @@ from   urlogger import URLogger
 ###
 # imports that are a part of this project
 ###
-from   dfanalysis import dfanalysis_main
+import dfanalysis
 from   dfdata import DFStatsDB
 from   sshconfig import SSHConfig
 
 ###
 # global objects
 ###
-myconfig  = None
-sshconfig = None
-logger    = None
-db        = None
-my_kids   = set()
+myconfig   = None
+sshconfig  = None
+logger     = None
+db         = None
+my_kids    = set()
+down_hosts = SloppyTree()
+
+@trap
+def clear_down_hosts(host:str) -> None:
+    if host in down_hosts:
+        del down_hosts[host]
+    return 
+
+def send_message(*args) -> None:
+    pass
+
+@trap
+def manage_down_hosts(host:str) -> None:
+    """
+    Handle problems with unavailable hosts.
+    """
+    global down_hosts
+    global my_config
+
+    # If not present, this adds it.
+    if host not in down_hosts:
+        down_hosts[host].num_times = 1
+        down_hosts[host].first_fail = time.time()
+        down_hosts[host].this_fail = down_hosts[host].first_fail
+        down_hosts[host].message_sent = 0
+    else:
+        # Increment the counter and note the time.
+        down_hosts[host].num_times += 1
+        down_hosts[host].this_fail = time.time()
+        
+    # Check whether we need to do anything about it.
+    p_host = down_hosts[host]
+
+    # Perhaps it needs to fail several times before we send a message?
+    if p_host.num_times < myconfig.num_allowed_failures:
+        return
+
+    # Have we ever sent a message?
+    if p_host.message_sent:
+    
+        # Has it been long enough that we need to send another one?
+        if p_host.this_fail - p_host.message_sent > myconfig.message_repeat:
+            send_message(myconfig.failure_message.format(host))
+            p_host.message_sent = p_host.this_fail
+
+
+    else: # We have never sent a message.
+        if myconfig.num_allowed_failures < p_host.num_times:
+            send_message(myconfig.failure_message.format(host))
+            p_host.message_sent = time.time()
+        else:
+            pass
+        
 
 @trap
 def extract_df(lines:list, partitions:list) -> object:
@@ -152,9 +205,11 @@ def query_host(host:str) -> str:
     same POSIX format rather than the native format of the
     OS being queried.
     """
-    global sshconfig
     global db
+    global down_hosts
     global logger
+    global sshconfig
+
     logger.debug(f"query_host {host=}")
     hostinfo = SloppyTree(sshconfig[host])
     logger.debug(f"{hostinfo=}")
@@ -167,7 +222,10 @@ def query_host(host:str) -> str:
         if not result.OK:
             logger.error(f"{result=}")
             db.record_error(host, result.code)
+            manage_down_hosts(host)
             return []
+        else:
+            clear_down_hosts(host)
 
         # return the lines, minus the header row, and with the \n chopped off.
         result = [ _.strip() for _ in result.stdout.split('\n')[1:] ]
@@ -215,7 +273,7 @@ def dfstat_main(myconfig:SloppyTree, analyze_this:bool) -> int:
     ###
     if analyze_this:
         if (pid := os.fork()):
-            dfanalysis_main()
+            dfanalysis.dfanalysis_main()
         else:
             my_kids.add(pid)
 
@@ -303,7 +361,14 @@ if __name__ == '__main__':
         HELP()
         sys.exit(os.EX_OK)
 
-    logfile=f"{os.path.basename(__file__)[:-3]}.log" 
+    logfile  = f"{os.path.basename(__file__)[:-3]}.log" 
+
+    # Make sure we are the only one copy of this program that is running.
+    lockfile = f"{os.path.basename(__file__)[:-3]}.lock" 
+    if not fileutils.get_lockfile(lockfile):
+        print(f"Cannot get {lockfile=}. This program is already running.")
+        sys.exit(os.EX_UNAVAILABLE)
+    
     analyze_this = not myargs.no_analysis
     
     # ignore all signals.
@@ -365,4 +430,8 @@ if __name__ == '__main__':
 
     except Exception as e:
         logger.error(f"Escaped or re-raised exception: {e=}")
+
+    finally:
+        if not fileutils.release_lockfile(lockfile):
+            print(f"Could not clear {lockfile=}. You may need to manually remove it.")
 
