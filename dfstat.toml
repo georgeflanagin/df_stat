@@ -27,7 +27,9 @@ notification_address = [ 'hpc@richmond.edu', '8044959650@vtext.com' ]
 ###
 # Parameters for statistical analysis
 ###
-#hosts = [{"host" = 'alexis', "partition" = "ERROR"}, {"host" = 'alexis', "partition" = "/usr/local"}]
+hosts = [   {host = 'alexis', partition = ["ERROR", "/home", "/usr/local"]}, 
+            {host = 'adam', partition = ["ERROR", "/home", "/"]} 
+        ]
 
 insert_statements = [
     "insert into hosts (host, partition) values ('alexis', 'ERROR');",

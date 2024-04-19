@@ -230,6 +230,21 @@ def null_generator():
     return
     yield
 
+@trap 
+def initial_inserts():
+    """
+    Construct SQL insert statements and execute.
+    This is when new workstation and its partitions 
+    is added to the toml file.
+    """
+    global db
+    for host in myconfig.hosts:
+        hostname = host["host"]
+        partitions = host["partition"]
+        for partition in partitions:
+            #print(hostname, partition)
+            db.initial(hostname, partition) 
+    return
 
 @trap
 def dfstat_main(myconfig:SloppyTree) -> int:
@@ -242,6 +257,7 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     global sshconfig
     global db
 
+    #initial_inserts()
     # Read the ssh info. SSHConfig is derived from SloppyTree
     try:
         sshconfig = SSHConfig(fileutils.expandall(myconfig.sshconfig_file))()
@@ -257,9 +273,9 @@ def dfstat_main(myconfig:SloppyTree) -> int:
     #     print(f"{e=}")
     #     sys.exit(os.EX_CONFIG)
     db = DFStatsDB(myconfig.database)
-    print(db.targets.items()) 
-    #db.populate_db(myargs.sql)
-
+    db.populate_db(myargs.sql)
+    
+    initial_inserts()
     #while True:
     try:
         for host, partitions in db.targets.items():
@@ -301,6 +317,7 @@ if __name__ == '__main__':
     try:
         with open(myargs.input, 'rb') as f:
             myconfig=SloppyTree(tomllib.load(f))
+            print("myconfig", myconfig)
     except Exception as e:
         print(f"{e=}\nUnable to read config from {myargs.input}")
         sys.exit(os.EX_CONFIG)

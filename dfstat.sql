@@ -14,9 +14,4 @@ CREATE VIEW v_hosts as SELECT * FROM hosts ORDER BY host, partition;
 
 CREATE VIEW v_recent_measurements as SELECT * FROM df_stat ORDER BY measured_at DESC;
 
-insert into hosts (host, partition) values ('alexis', 'ERROR');
-insert into hosts (host, partition) values ('alexis', '/home');
-insert into hosts (host, partition) values ('alexis', '/usr/local');
-insert into hosts (host, partition) values ('adam', 'ERROR');
-insert into hosts (host, partition) values ('adam', '/home');
-insert into hosts (host, partition) values ('adam', '/');
+
