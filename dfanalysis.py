@@ -60,7 +60,6 @@ __status__ = 'in progress'
 __license__ = 'MIT'
 
 mynetid = getpass.getuser()
-from dfstat import myconfig, logger, db
 
 @trap
 def handler(signum:int, stack:object=None) -> None:
@@ -167,7 +166,7 @@ def run_analysis() -> None:
     more recent than a cutoff value related to the measurement
     interval. IOW, the last "N" values.
     """
-    global myconfig
+    from dfstat import myconfig, logger, db
 
     logger.debug("run_analysis")
     seconds_ago = myconfig.time_interval * myconfig.window_size
@@ -188,8 +187,9 @@ def timestamp_to_sqlite(t:int) -> str:
 
 @trap
 def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
-    global logger
-    global myconfig
+    from dfstat import myconfig, logger, db
+
+    print(f"{myconfig=} {logger=} {db=}")
 
     # Set up to ignore all signals, ....
     for sig in range(0, signal.SIGRTMAX):
