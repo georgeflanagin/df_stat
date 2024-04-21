@@ -35,6 +35,27 @@ notification_address = [ 'hpc@richmond.edu', '8044959650@vtext.com' ]
 ###
 # Parameters for statistical analysis
 ###
-mu = 0
-sigma = 0.1
-p_value = 0.05
+hosts = [   {host = 'alexis', partition = ["ERROR", "/home", "/usr/local"]}, 
+            {host = 'adam', partition = ["ERROR", "/home", "/"]}, 
+            {host = 'spydur', partition = ["ERROR", "/home", "/usr/local", "/scratch"]},
+            {host = 'billieholiday', partition = ["ERROR", "/home", "/"]},
+            {host = 'justin', partition = ["ERROR", "/home", "/", "/scr", "/data"]},
+            {host = 'boyi', partition = ["ERROR", "/", "/scr", "/data"]},
+            {host = 'camryn', partition = ["ERROR", "/home", "/"]},
+            {host = 'cooper', partition = ["ERROR", "/home", "/"]},
+            {host = 'erica', partition = ["ERROR", "/home", "/", "scratch"]},
+            {host = 'hamilton', partition = ["ERROR", "/home", "/"]},
+            {host = 'irene', partition = ["ERROR", "/home", "/"]},
+            {host = 'kevin', partition = ["ERROR", "/home", "/"]},
+            {host = 'mayer', partition = ["ERROR", "/home", "/"]},
+            {host = 'michael', partition = ["ERROR", "/home", "/"]},
+            {host = 'sarah', partition = ["ERROR", "/"]},
+            {host = 'thais', partition = ["ERROR", "/home", "/"]},
+            {host = 'spiderweb', partition = ["/home", "/", "/var", "/opt", "/usr/local"]},
+            {host = 'enterprise', partition = ["ERROR", "/home", "/"]}, 
+            {host = "trueuser", partition = ["ERROR", "/", "/var", "/mnt/usrlocal"]},
+            {host = 'truenas', partition = ["ERROR", "/", "/var", "/mnt/Parish_backup"]},
+            {host = 'newnas', partition = ["ERROR", "/", "/var", "/mnt/chem1"]}
+]
+
+

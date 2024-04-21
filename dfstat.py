@@ -236,13 +236,33 @@ def query_host(host:str) -> str:
         db.record_error(host, -1)
         logger.error(f"{e=}")
         return []
+        # another try-except to avoid foreign key constraint error,
+        # that is related to a wrong host name
+        try:
+            db.record_error(host, -1)
+        except:
+            return []
     
-
 @trap
 def null_generator():
     return
     yield
 
+@trap 
+def initial_inserts():
+    """
+    Construct SQL insert statements and execute.
+    This is when new workstation and its partitions 
+    is added to the toml file.
+    """
+    global db
+    for host in myconfig.hosts:
+        hostname = host["host"]
+        partitions = host["partition"]
+        for partition in partitions:
+            #print(hostname, partition)
+            db.initial(hostname, partition) 
+    return
 
 @trap
 def dfstat_main(myconfig:SloppyTree, analyze_this:bool) -> int:
@@ -257,9 +277,7 @@ def dfstat_main(myconfig:SloppyTree, analyze_this:bool) -> int:
     global logger
     logger.debug("main")
 
-    ###
     # Read the ssh info. SSHConfig is derived from SloppyTree
-    ###
     try:
         sshconfig = SSHConfig(fileutils.expandall(myconfig.sshconfig_file))()
     except Exception as e:
@@ -288,6 +306,26 @@ def dfstat_main(myconfig:SloppyTree, analyze_this:bool) -> int:
     finally:
         return graceful_exit()
         
+    # Open the database.
+    # try:
+    #     db = DFStatsDB(myconfig.database)
+    # except Exception as e:
+    #     print(f"{e=}")
+    #     sys.exit(os.EX_CONFIG)
+    db = DFStatsDB(myconfig.database)
+    db.populate_db(myargs.sql)
+    
+    initial_inserts()
+    #while True:
+    try:
+        for host, partitions in db.targets.items():
+            logger.debug(f"{host=} {partitions=}")
+            info = extract_df(query_host(host), partitions)
+            
+            for partition, values in info.items():
+                db.record_measurement(host, partition, values[1], values[2])
+    except Exception as e:
+        print(f"Something went wrong: {e}.")
 
 def HELP() -> None:
     """
@@ -387,6 +425,7 @@ if __name__ == '__main__':
     try:
         with open(myargs.input, 'rb') as f:
             myconfig=SloppyTree(tomllib.load(f))
+            print("myconfig", myconfig)
     except Exception as e:
         print(f"{e=}\nUnable to read config from {myargs.input}")
         sys.exit(os.EX_CONFIG)

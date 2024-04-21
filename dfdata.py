@@ -58,6 +58,7 @@ __license__ = 'MIT'
 
 
 SQL = SloppyTree({
+    'initial': """INSERT INTO hosts (host, partition) values (?, ?)""",
     'cleanup' : """
         DELETE FROM df_stat WHERE rowid NOT IN 
             (SELECT rowid FROM v_recent_measurements)
@@ -126,7 +127,12 @@ class DFStatsDB:
             for statement in sql_statements: 
                 print(statement)
                 self.db.execute_SQL(statement) 
-        print(sql_statements)
+
+    def initial(self, host, partition):
+        """
+        Execute insert statements.        
+        """
+        self.db.execute_SQL(SQL.initial, host, partition)
 
 
     @property
