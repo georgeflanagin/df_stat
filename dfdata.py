@@ -31,6 +31,7 @@ import pandas
 import linuxutils
 from   sloppytree import SloppyTree
 import sqlitedb
+from sqlitedb import SQLiteDB
 from   urdecorators import trap
 
 
@@ -71,9 +72,12 @@ SQL = SloppyTree({
         (host, partition, partition_size, avail_disk ) VALUES (?, ?, ?, ?)"""
     })
 
+class DFStatsDB(SQLiteDB):
+    pass
 
-class DFStatsDB:
-    
+class DFStatsDB(SQLiteDB):
+
+    '''    
     def __init__(self, db_name:str) -> None:
         """
         Build a class member for the database. This way,
@@ -81,7 +85,7 @@ class DFStatsDB:
         properties of the database.
         """
         self.db = sqlitedb.SQLiteDB(db_name)
-
+    '''
 
     def cleanup(self, window_size:int) -> int:
         return self.db.execute_SQL(SQL.cleanup)

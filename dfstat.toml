@@ -30,7 +30,7 @@ window_size = 50
 ###
 # Where to send the alarms.
 ###
-notification_address = [ 'hpc@richmond.edu', '8044959650@vtext.com' ]
+notification_address = [ 'alina.enikeeva@richmond.edu' ]
 
 ###
 # Parameters for statistical analysis

@@ -65,10 +65,12 @@ from   sshconfig import SSHConfig
 ###
 # global objects
 ###
-myconfig   = None
+with open("dfstat.toml", 'rb') as f:
+    logfile  = f"{os.path.basename(__file__)[:-3]}.log"
+    myconfig   = SloppyTree(tomllib.load(f)) # None
 sshconfig  = None
-logger     = None
-db         = None
+logger     = URLogger(logfile=logfile, level= logging.INFO) #myargs.loglevel) #None
+db         = DFStatsDB(myconfig.database) #None
 my_kids    = set()
 down_hosts = SloppyTree()
 
@@ -314,7 +316,7 @@ def dfstat_main(myconfig:SloppyTree, analyze_this:bool) -> int:
     #     sys.exit(os.EX_CONFIG)
     db = DFStatsDB(myconfig.database)
     db.populate_db(myargs.sql)
-    
+    print("ddd", db) 
     initial_inserts()
     #while True:
     try:

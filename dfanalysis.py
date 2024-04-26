@@ -46,7 +46,8 @@ import fileutils
 import linuxutils
 from   urdecorators import show_exceptions_and_frames as trap
 from   urlogger import URLogger
-
+from   dfdata import DFStatsDB
+from   dorunrun import dorunrun
 ###
 # Credits
 ###
@@ -60,7 +61,7 @@ __status__ = 'in progress'
 __license__ = 'MIT'
 
 mynetid = getpass.getuser()
-
+'''
 @trap
 def handler(signum:int, stack:object=None) -> None:
     """
@@ -79,14 +80,9 @@ def handler(signum:int, stack:object=None) -> None:
 
     else:
         return
-
+'''
 @trap
 def analyze_diskspace(frame:pandas.DataFrame) -> None:
-    pass
-
-
-@trap
-def determine_stationarity():
     """
     This method uses KPSS test to determine data non-stationarity.
     Data is non-stationary if
@@ -94,51 +90,43 @@ def determine_stationarity():
         2. p-value < 0.05
     If data is non-stationary, send email to hpc@richmond.edu
     """
-    info = extract_df()
-    for dir, _ in info.items():
-        ### Conduct test for each directory
-        select_SQL = f"""SELECT * FROM df_stat WHERE directory = '{dir}';"""
-        df = db.execute_SQL(select_SQL, we_have_pandas=True) 
-
-        # specify regression as ct to determine that null hypothesis is 
-        # that the data is stationary
-        # add noise to data so that KPSS statistics calculates results 
-        clean_data = df["memavail"].astype(float) 
-        mu, sigma = 0, 0.1 
-        noise = np.random.normal(mu, sigma, [1, df.shape[0]])
-        data_with_noise = clean_data + noise[0]
-        statistic, p_value, n_lags, critical_values = kpss(data_with_noise, regression ='ct', store = True)
-    
-        # debug output
-        print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
-
+    #columns : host   partition  partition_size  avail_disk  error_code measured_at
+    from dfstat import myconfig, logger
+    if (frame["error_code"]==0).any():
+        avail_disk = frame["avail_disk"][frame["error_code"]==0]
+        mu, sigma = 0, 0.1
+        statistic, p_value, n_lags, critical_values = kpss(avail_disk, regression ='ct', store = True)
+        #print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
+        
         ### send email if data is non-stationary and if there is memory drop
-        if (p_value < 0.05) and is_mem_drop(dir):
-            subject = f"'Check {dir}, there might be a disk space drop.'"
+        if (p_value < 0.05) and is_mem_drop(avail_disk):
+            subject = "ho" # ADD THE MESSAGE HERE             
             # send email in the background
-            cmd = f"nohup mailx -s {subject}  '{myargs.email}' /dev/null 2>&1 &"
-            dorunrun(cmd)
-        #except:
-        #    return
-    return
-
+            send_email(subject)
+        else:
+            pass
 
 @trap
-def is_mem_drop(dir: str) -> bool:
-    """
-    Compare last two entries for filesystem 
-    and return True if the previous entry is higher than the 
-    current one - f(then) > f(now). That way we will determine that 
-    there is a drop in memory rather than the rise. 
-    """
-    SQL_select = f"""SELECT memavail FROM df_stat WHERE directory = '{dir}' ORDER BY datetime DESC LIMIT 2"""
-    result = db.execute_SQL(SQL_select, we_have_pandas=True)
-    mem_then = result.values[0][0]
-    mem_now = result.values[1][0]
+def send_email(subject:str):
+    from dfstat import myconfig, logger
+    print("haha")
+    cmd = f"nohup mailx -s {subject} '{myconfig.notification_address[0]}' /dev/null 2>&1 &"
+    print(cmd)
+    dorunrun(cmd)
+
+@trap
+def is_mem_drop(frame:pandas.DataFrame) -> bool:
+    
+    print(frame.tail(2))
+    last_two_values = frame.tail(2).to_list()
+    print("last two", last_two_values)
+
+    mem_then = last_two_values[0]
+    mem_now = last_two_values[1]
     if mem_then > mem_now:
         return True
-
-
+    return False
+'''
 @trap
 def fiscaldaemon_events() -> int:
     """
@@ -158,7 +146,7 @@ def fiscaldaemon_events() -> int:
     logger.info('All files closed')
     return os.EX_OK
 
-
+'''
 @trap
 def run_analysis() -> None:
     """
@@ -169,14 +157,14 @@ def run_analysis() -> None:
     from dfstat import myconfig, logger, db
 
     logger.debug("run_analysis")
-    seconds_ago = myconfig.time_interval * myconfig.window_size
+    seconds_ago =  myconfig.time_interval * myconfig.window_size
     starttime = timestamp_to_sqlite(time.time() - seconds_ago)
        
     SQL = f"""
         SELECT * from v_recent_measurements where measured_at > "{starttime}"
         """
-    frame = pandas.read_sql(SQL, db())
-    for host_frame in ( group for _, group in frame.groupby('host') ):
+    frame = db.execute_SQL(SQL)
+    for host_frame in [group for _, group in frame.groupby('host')]:
         for partition_frame in ( group for _, group in host_frame.groupby('partition') ):
             analyze_diskspace(partition_frame)
 
@@ -188,7 +176,8 @@ def timestamp_to_sqlite(t:int) -> str:
 @trap
 def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
     from dfstat import myconfig, logger, db
-
+ 
+    send_email("love")
     print(f"{myconfig=} {logger=} {db=}")
 
     # Set up to ignore all signals, ....
@@ -199,11 +188,11 @@ def dfanalysis_main(myargs:argparse.Namespace=None) -> int:
             pass
 
     # Except for these:
-    for sig in [ signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGTERM, signal.SIGQUIT, signal.SIGINT ]:
-        signal.signal(sig, handler)
+    #for sig in [ signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2, signal.SIGTERM, signal.SIGQUIT, signal.SIGINT ]:
+    #    signal.signal(sig, handler)
 
-    logfile=f"{os.path.basename(__file__)[:-3]}.log" 
-    logger = URLogger(logfile=logfile, level=logging.DEBUG)
+    #logfile=f"{os.path.basename(__file__)[:-3]}.log" 
+    #logger = URLogger(logfile=logfile, level=logging.DEBUG)
 
     while True:
         run_analysis()
