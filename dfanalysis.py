@@ -61,26 +61,6 @@ __status__ = 'in progress'
 __license__ = 'MIT'
 
 mynetid = getpass.getuser()
-'''
-@trap
-def handler(signum:int, stack:object=None) -> None:
-    """
-    Map SIGHUP and SIGUSR1 to a restart/reload, and 
-    SIGUSR2 and the other common signals to an orderly
-    shutdown. 
-    """
-    global logger
-    if signum in [ signal.SIGHUP, signal.SIGUSR1 ]: 
-        dfanalysis_main()
-
-    elif signum in [ signal.SIGUSR2, signal.SIGQUIT, signal.SIGINT ]:
-        logger.info(f'Closing up from signal {signum}')
-        fileutils.fclose_all()
-        sys.exit(os.EX_OK)
-
-    else:
-        return
-'''
 @trap
 def analyze_diskspace(frame:pandas.DataFrame) -> None:
     """
@@ -126,27 +106,6 @@ def is_mem_drop(frame:pandas.DataFrame) -> bool:
     if mem_then > mem_now:
         return True
     return False
-'''
-@trap
-def fiscaldaemon_events() -> int:
-    """
-    This is the event loop.
-    """
-    global myargs, logger
-
-    found_stop_event = False
-
-    while True:
-        determine_stationarity()
-        time.sleep(myargs.timeinterval)
-        insert_in_db()
-        delete_older_entries()
-
-    fileutils.fclose_all()
-    logger.info('All files closed')
-    return os.EX_OK
-
-'''
 @trap
 def run_analysis() -> None:
     """
