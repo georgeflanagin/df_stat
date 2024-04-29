@@ -5,6 +5,11 @@
 database = './dfstat.db'
 
 ###
+# Messenger location 
+###
+urmessage = { host = '127.0.0.1', port = 33333, source = './urmessage.py' }
+
+###
 # Location of the ssh config information
 ###
 sshconfig_file = '~/.ssh/config'
