@@ -135,9 +135,11 @@ def send_urmessage(destination:str, subject:str, host:str='127.0.0.1', port:int=
     try:
         message = f"${destination}#{subject}$"
         urmessage_service.sendall(message.encode())
+        return True
 
     except Exception as e:
         print(f"{e=}")
+        return False
 
     finally:
         urmessage_service.close()
