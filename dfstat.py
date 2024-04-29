@@ -173,9 +173,12 @@ def graceful_exit() -> int:
     except:
         pass
 
-    fileutils.fclose_all()
-    if os.isatty(1): return os.EX_OK
-    os._exit(os.EX_OK)
+    finally:
+        fileutils.fclose_all()
+        lockfile = f"{os.path.basename(__file__)[:-3]}.lock" 
+        fileutils.release_lockfile(lockfile)
+        if os.isatty(1): return os.EX_OK
+        os._exit(os.EX_OK)
 
 
 @trap
