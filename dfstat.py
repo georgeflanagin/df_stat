@@ -37,7 +37,7 @@ import re
 import signal
 import sqlite3
 import time
-import tomllib
+import tomllib as toml
 
 ###
 # Installed libraries
@@ -54,6 +54,7 @@ from   sloppytree import SloppyTree
 from   sqlitedb import SQLiteDB
 from   urdecorators import trap
 from   urlogger import URLogger
+import tomllib
 
 ###
 # imports that are a part of this project
@@ -61,14 +62,16 @@ from   urlogger import URLogger
 import dfanalysis
 from   dfdata import DFStatsDB
 from   sshconfig import SSHConfig
+from   urmessage import send_urmessage
 
 ###
 # global objects
 ###
 with open("dfstat.toml", 'rb') as f:
-    logfile  = f"{os.path.basename(__file__)[:-3]}.log"
-    myconfig   = SloppyTree(tomllib.load(f)) # None
+    myconfig = SloppyTree(tomllib.load(f)) # None
+
 sshconfig  = None
+logfile  = f"{os.path.basename(__file__)[:-3]}.log"
 logger     = URLogger(logfile=logfile, level= logging.INFO) #myargs.loglevel) #None
 db         = DFStatsDB(myconfig.database) #None
 my_kids    = set()

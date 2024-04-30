@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import typing
 from   typing import *
+from   collections.abc import Iterable
 
 ###
 # Standard imports, starting with os and sys
@@ -36,6 +37,7 @@ import linuxutils
 from   sloppytree import SloppyTree
 from   urdecorators import trap
 from   urlogger import URLogger
+import tomllib
 
 ###
 # imports and objects that were written for this project.
@@ -78,12 +80,14 @@ def handler(signum:int, stack:object=None) -> None:
 
 
 def handle_message(client_socket:object, addr:str) -> None:
-    data = None
+    data = b''
     try:
         print(f"Connected to {addr}")
         while True:
-            if not (data := client_socket.recv(4096)): break
-            send_message(data.decode())
+            if not (datum := client_socket.recv(4096)): break
+            data += datum
+
+        send_message(data.decode())
 
     finally:
         client_socket.close()
@@ -117,20 +121,24 @@ def send_message(message:str) -> None:
 
 
 @trap
-def send_urmessage(destination:str, subject:str, host:str='127.0.0.1', port:int=33333) -> bool:
+def send_urmessage(destination:Iterable, subject:str, host:str='127.0.0.1', port:int=33333) -> bool:
     """
     Connect to the urmessage service's socket and send a short message
     consisting of just a subject line.
 
-    destination -- mailbox name, "user@richmond.edu"
+    destination -- a list of recipients' email addresses.
     subject -- subject line of the message
     host -- defaults to /this/ computer .. might be a bad choice, but you
         gotta have something.
     port -- 33333 is the default port for the urmessage service.
     """
 
-    urmessage_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    urmessage_service.connect((host, port))
+    try:
+        urmessage_service = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        urmessage_service.connect((host, port))
+    except Exception as e:
+        print(f"{e=}")
+        sys.exit(os.EX_UNAVAILABLE)
 
     try:
         message = f"${destination}#{subject}$"
@@ -155,9 +163,13 @@ def urmessage_main(myargs:argparse.Namespace) -> int:
 
     not myargs.foreground and linuxutils.daemonize_me()
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((myargs.host, myargs.port))
-    server_socket.listen(3)
+    try:
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((myargs.host, myargs.port))
+        server_socket.listen(3)
+    except Exception as e:
+        logger.error(f"Cannot open listen socket at {myargs.host}:{myargs.port}. Exception {e=}")
+        sys.exit(os.EX_UNAVAILABLE)
 
     try:
         while True:
@@ -178,27 +190,60 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(prog="urmessage", 
         description="What urmessage does, urmessage does best.")
 
-    parser.add_argument('--host', type=str, default='0.0.0.0')
-    parser.add_argument('-p', '--port', type=int, default=33333)
+    parser.add_argument('--config', type=str, default=f"{os.path.basename(__file__)[:-3]}.toml")
     parser.add_argument('-f', '--foreground', action='store_true',
         help="Run in the foreground rather than becoming a daemon.")
+    parser.add_argument('--host', type=str, default='0.0.0.0')
     parser.add_argument('-L', '--loglevel', type=int, default=logging.INFO,
         choices=range(50,0,-10))
+    parser.add_argument('-p', '--port', type=int, default=33333)
+    parser.add_argument('-z', '--zap', action='store_true', 
+        help='Remove old logfile.')
 
     myargs = parser.parse_args()
 
+    ###
     # Send all relevant signals to the handler.
+    ###
     for sig in [ signal.SIGINT, signal.SIGQUIT, signal.SIGTERM, signal.SIGHUP,
                         signal.SIGUSR1, signal.SIGUSR2 ]:
         signal.signal(sig, handler)
 
+    ###
+    # Load the configuration info.
+    ###
+    with open(myargs.config, 'rb') as f:
+        myconfig = SloppyTree(tomllib.load(f)) # None
+
+    ###
+    # Open the logfile, removing the old one if asked.
+    ###
     logfile  = f"{os.path.basename(__file__)[:-3]}.log" 
+    if myargs.zap: 
+        try:
+            os.unlink(logfile)
+        except:
+            pass
     logger = URLogger(logfile=logfile, level=myargs.loglevel)
     logger.info('+++ BEGIN +++')
+
+    ###
+    # Check the lockfile to see if we are already running.
+    ###
+    lockfile = f"{os.path.basename(__file__)[:-3]}.lock" 
+    if not fileutils.get_lockfile(lockfile):
+        print(f"Cannot get {lockfile=}. This program is already running.")
+        sys.exit(os.EX_UNAVAILABLE)
+    else:
+        print("Lock established.")
     
     try:
         sys.exit(globals()[f"{os.path.basename(__file__)[:-3]}_main"](myargs))
 
     except Exception as e:
         print(f"Escaped or re-raised exception: {e}")
+    
+    finally:
+        fileutils.release_lockfile(lockfile)
+    
 
