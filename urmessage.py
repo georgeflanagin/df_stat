@@ -87,13 +87,13 @@ def handle_message(client_socket:object, addr:str) -> None:
             if not (datum := client_socket.recv(4096)): break
             data += datum
 
-        send_message(data.decode())
+        send_email_message(data.decode())
 
     finally:
         client_socket.close()
 
 
-def send_message(message:str) -> None:
+def send_email_message(message:str) -> None:
     global logger    
 
     if message:
