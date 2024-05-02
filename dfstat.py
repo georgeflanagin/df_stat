@@ -37,7 +37,7 @@ import re
 import signal
 import sqlite3
 import time
-import tomllib
+import tomllib as toml
 
 ###
 # Installed libraries
@@ -54,6 +54,7 @@ from   sloppytree import SloppyTree
 from   sqlitedb import SQLiteDB
 from   urdecorators import trap
 from   urlogger import URLogger
+import tomllib
 
 ###
 # imports that are a part of this project
@@ -61,14 +62,16 @@ from   urlogger import URLogger
 import dfanalysis
 from   dfdata import DFStatsDB
 from   sshconfig import SSHConfig
+from   urmessage import send_urmessage
 
 ###
 # global objects
 ###
 with open("dfstat.toml", 'rb') as f:
-    logfile  = f"{os.path.basename(__file__)[:-3]}.log"
-    myconfig   = SloppyTree(tomllib.load(f)) # None
+    myconfig = SloppyTree(tomllib.load(f)) # None
+
 sshconfig  = None
+logfile  = f"{os.path.basename(__file__)[:-3]}.log"
 logger     = URLogger(logfile=logfile, level= logging.INFO) #myargs.loglevel) #None
 db         = DFStatsDB(myconfig.database) #None
 my_kids    = set()
@@ -173,9 +176,12 @@ def graceful_exit() -> int:
     except:
         pass
 
-    fileutils.fclose_all()
-    if os.isatty(1): return os.EX_OK
-    os._exit(os.EX_OK)
+    finally:
+        fileutils.fclose_all()
+        lockfile = f"{os.path.basename(__file__)[:-3]}.lock" 
+        fileutils.release_lockfile(lockfile)
+        if os.isatty(1): return os.EX_OK
+        os._exit(os.EX_OK)
 
 
 @trap
@@ -375,6 +381,7 @@ def HELP() -> None:
             
     """)
 
+
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(prog="dfstat", 
@@ -391,15 +398,15 @@ if __name__ == '__main__':
         help="run in the foreground (aids debugging)")
     parser.add_argument('-o', '--output', type=str, default="",
         help="Output file name")
+    parser.add_argument('--messenger', action='store_true',
+        help="Start the urmessage daemon on this host.")
     parser.add_argument('-z', '--zap', action='store_true',
         help="remove old logfile.")
 
     myargs = parser.parse_args()
 
     # Abandon if the user is just requesting help.
-    if myargs.help:
-        HELP()
-        sys.exit(os.EX_OK)
+    if myargs.help: HELP() or sys.exit(os.EX_OK)
 
     logfile  = f"{os.path.basename(__file__)[:-3]}.log" 
 
@@ -463,6 +470,13 @@ if __name__ == '__main__':
 
     logger = URLogger(logfile=logfile, level=myargs.loglevel)
     logger.info('+++ BEGIN +++')
+
+    if myargs.messenger:
+        cmd = f"""nohup python {myconfig.urmessage.source} &""" 
+        try:
+            result = dorunrun(cmd, return_datatype = dict)
+        except Exception as e:
+            logger.error(f"Exception launching messenger: {e=}")
 
     try:
         outfile = sys.stdout if not myargs.output else open(myargs.output, 'w')
