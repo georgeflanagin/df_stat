@@ -62,7 +62,7 @@ __license__ = 'MIT'
 
 mynetid = getpass.getuser()
 @trap
-def analyze_diskspace(frame:pandas.DataFrame) -> None:
+def analyze_diskspace_kpss(frame:pandas.DataFrame) -> None:
     """
     This method uses KPSS test to determine data non-stationarity.
     Data is non-stationary if
@@ -85,6 +85,22 @@ def analyze_diskspace(frame:pandas.DataFrame) -> None:
             send_email(subject)
         else:
             pass
+
+@trap 
+def analyze_diskspace_progressively(frame:pandas.DataFrame) -> None:
+    from dfstat import myconfig, logger
+    if (frame["error_code"]==0).any():
+        avail_disk = frame["avail_disk"][frame["error_code"]==0].to_list()
+
+    thresholds = [100*1024, 1024*1024, 10*1024*1024]
+    rates = [0.05, 0.10, 0.15]
+    
+    # take 
+    for i in range(len(thresholds)):
+            
+
+    pass
+    
 
 @trap
 def send_email(subject:str):
@@ -125,7 +141,8 @@ def run_analysis() -> None:
     frame = db.execute_SQL(SQL)
     for host_frame in [group for _, group in frame.groupby('host')]:
         for partition_frame in ( group for _, group in host_frame.groupby('partition') ):
-            analyze_diskspace(partition_frame)
+            #analyze_diskspace_kpss(partition_frame)
+            analyze_diskspace_progressively(partition_frame)
 
 @trap
 def timestamp_to_sqlite(t:int) -> str:
