@@ -22,7 +22,8 @@ import logging
 import signal
 import socket
 import threading
-
+from email.message import EmailMessage
+import smtplib
 
 ###
 # Installed libraries like numpy, pandas, paramiko
@@ -106,22 +107,33 @@ def send_email_message(message:str) -> None:
     if message[0] != '$' or message[-1] != '$':
         logger.error('Malformed message.')
         return
-
-    # check for correctness again.        
     try:
-        destination, subject = message[1:-1].split('#')
-    except Exception as e:
-        logger.error(f'Malformed message. {e=}')
-        return
+        destination, subject, body = message[1:-1].split('#')
+        msg = EmailMessage()
+        msg['From'] = ''  # Set the sender email address
+        msg['To'] = ', '.join(destination)      # Set the recipient email addresses
+        msg['Subject'] = subject
+        msg.set_content(body)
 
+        # Send the email
+        with smtplib.SMTP('your_smtp_server', 587) as smtp:  # Set your SMTP server details
+            smtp.starttls()
+            smtp.login('your_email@example.com', 'your_password')  # Set your email login credentials
+            smtp.send_message(msg)
+            logger.info("Email sent successfully")
+    except Exception as e:
+        logger.error(f"Failed to send email: {e}")
+        return
+    '''
     cmd = f"sudo mailx -s '{subject}' {destination} "
     logger.info(f"{cmd=}")
     result = dorunrun(cmd, return_datatype=dict)
+    
     logger.info(f"{result=}")
-
+    '''
 
 @trap
-def send_urmessage(destination:Iterable, subject:str, host:str='127.0.0.1', port:int=33333) -> bool:
+def send_urmessage(destination:Iterable, subject:str, body:str, host:str='127.0.0.1', port:int=33333) -> bool:
     """
     Connect to the urmessage service's socket and send a short message
     consisting of just a subject line.
@@ -141,7 +153,7 @@ def send_urmessage(destination:Iterable, subject:str, host:str='127.0.0.1', port
         sys.exit(os.EX_UNAVAILABLE)
 
     try:
-        message = f"${destination}#{subject}$"
+        message = f"${destination}#{subject}#{body}$"
         urmessage_service.sendall(message.encode())
         return True
 

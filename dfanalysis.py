@@ -28,6 +28,7 @@ import time
 # Installed libraries
 ###
 import pandas
+import math
 import numpy as np
 import statsmodels.api as sm
 # Use Kwiatkowski-Phillips-Schmidt-Shin (KPSS) test
@@ -48,6 +49,7 @@ from   urdecorators import show_exceptions_and_frames as trap
 from   urlogger import URLogger
 from   dfdata import DFStatsDB
 from   dorunrun import dorunrun
+from urmessage import send_urmessage
 ###
 # Credits
 ###
@@ -70,29 +72,31 @@ def analyze_diskspace_kpss(frame:pandas.DataFrame) -> None:
         2. p-value < 0.05
     If data is non-stationary, send email to hpc@richmond.edu
     """
-    #columns : host   partition  partition_size  avail_disk  error_code measured_at
+    #columns : host   partition  used_space  free_space  error_code measured_at
     from dfstat import myconfig, logger
     if (frame["error_code"]==0).any():
-        avail_disk = frame["avail_disk"][frame["error_code"]==0]
+        free_space = frame["free_space"][frame["error_code"]==0]
+        used_space = frame["used_space"][frame["error_code"]==0]
+        partition_size = frame["partition_size"][frame["error_code"]==0]
         mu, sigma = 0, 0.1
-        statistic, p_value, n_lags, critical_values = kpss(avail_disk, regression ='ct', store = True)
+        statistic, p_value, n_lags, critical_values = kpss(free_space.astype(int), regression ='ct', store = True)
         #print(f'Result: The series is {"not " if p_value < 0.05 else ""}stationary')
         
-        if (p_value < 0.05) and is_mem_drop(avail_disk):
-            initial_measurement = avail_disk.tolist()[0]
-            latest_measurement = avail_disk.tolist()[len(frame)-1]
-            return (True, initial_measurement, latest_measurement) # alert
+        if (p_value < 0.05) and is_mem_drop(free_space):
+            #initial_measurement = free_space.tolist()[0]
+            #latest_measurement = free_space.tolist()[len(frame)-1]
+            percent_occupied = (used_space / partition_size ) * 100
+            return (True, percent_occupied) # alert
     return False           
  
 @trap 
 def analyze_diskspace_progressively(frame:pandas.DataFrame) -> None:
     from dfstat import myconfig, logger
     if (frame["error_code"]==0).any():
-        avail_disk = frame["avail_disk"][frame["error_code"]==0].to_list()[len(frame)-1]
+        free_space = frame["free_space"][frame["error_code"]==0].to_list()[len(frame)-1]
+        used_space = frame["used_space"][frame["error_code"]==0].to_list()[len(frame)-1]
         partition_size = frame["partition_size"][frame["error_code"]==0].to_list()[len(frame)-1]
     try:
-        print("available ", avail_disk, "partition size ", partition_size)
-
         # check the latest measurement
 
         # highest is greater than 20 Tb, taxed at 20%
@@ -103,13 +107,14 @@ def analyze_diskspace_progressively(frame:pandas.DataFrame) -> None:
      
         taxed_val = 0
         if (partition_size < thresholds[0]) or (partition_size > thresholds[0] and partition_size < thresholds[1]):
-            taxed_partition_size = partition_size * 0.8
-        elif partition_size >  thresholds[1]:
-            taxed_partition_size = partition_size * 0.9
+            taxed_space = partition_size * 0.8
+        elif used_space >  thresholds[1]:
+            taxed_space = partition_size * 0.9
                     
-        if avail_disk > taxed_partition_size:
-            #print(avail_disk, "//", taxed_partition_size)
-            return (True, avail_disk, "close to filling up") # alert
+        if used_space > taxed_space:
+            percent_occupied = (used_space / partition_size ) * 100
+            #print(free_space, "//", taxed_used_space)
+            return (True, percent_occupied) # alert
     except Exception as e:
         return False
     return False 
@@ -118,17 +123,20 @@ def analyze_diskspace_progressively(frame:pandas.DataFrame) -> None:
 def analyze_diskspace_changerate(frame:pandas.DataFrame) -> None:
     from dfstat import myconfig, logger
     if (frame["error_code"]==0).any():
-        avail_disk = frame["avail_disk"][frame["error_code"]==0]
+        free_space = frame["free_space"][frame["error_code"]==0]
+        used_space = frame["used_space"][frame["error_code"]==0].tolist()[len(frame)-1]
+        partition_size = frame["partition_size"][frame["error_code"]==0].tolist()[len(frame)-1]
     try:
-        print(avail_disk)
+        print(free_space)
 
-        initial_measurement = avail_disk.tolist()[0]
-        latest_measurement = avail_disk.tolist()[len(frame)-1]
+        initial_measurement = free_space.tolist()[0]
+        latest_measurement = free_space.tolist()[len(frame)-1]
         
         rate_of_change = (latest_measurement - initial_measurement) / initial_measurement
 
         if rate_of_change > 0.5:
-            return (True, initial_measurement, latest_measurement)
+            percent_occupied = (used_space / partition_size ) * 100
+            return (True, math.ceil(percent_occupied))
         return False
     except Exception as e:
         print(e)
@@ -170,18 +178,22 @@ def run_analysis() -> None:
         SELECT * from v_recent_measurements""" # where measured_at > "{starttime}"
         #"""
     frame = db.execute_SQL(SQL)
-    print(SQL, frame)
+    
     for host_frame in [group for _, group in frame.groupby('host')]:
         for partition_frame in ( group for _, group in host_frame.groupby('partition') ):
-            #analyze_diskspace_kpss(partition_frame)
-            analysis = analyze_diskspace_progressively(partition_frame)
+            analysis = analyze_diskspace_changerate(partition_frame)
+            #analysis = analyze_diskspace_kpss(partition_frame)
+            #analysis = analyze_diskspace_progressively(partition_frame)
+            print("analysis", analysis)
             if type(analysis) == tuple:
                 if analysis[0] is True:
                     host = host_frame["host"].to_list()[0]
                     partition = host_frame["partition"].to_list()[0]
                      
                     subject = f"Check {partition} on {host}"
-                    body = f"The diskspace changed from {analysis[1]} to {analysis[2]} since {starttime}"
+                    body = f"The diskspace is {(analysis[1])}% occupied."
+                    print("about to send a message")
+                    send_urmessage('alina.enikeeva@richmond.edu', 'test message', 'test body')
                     print(subject, body)   
             #analyze_diskspace_changerate(partition_frame)
 

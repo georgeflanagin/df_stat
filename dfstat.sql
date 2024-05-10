@@ -23,7 +23,9 @@ CREATE INDEX timestamp_idx on df_stat(measured_at);
 
 CREATE VIEW v_hosts as SELECT * FROM hosts ORDER BY host, partition;
 
-CREATE VIEW v_recent_measurements as SELECT * FROM df_stat ORDER BY measured_at DESC;
+--CREATE VIEW v_recent_measurements as SELECT * FROM df_stat ORDER BY measured_at DESC;
+CREATE VIEW v_recent_measurements AS SELECT host,"partition", partition_size as used_space, avail_disk as free_space, (partition_size + avail_disk) AS partition_size,error_code,measured_at FROM df_stat ORDER BY measured_at DESC
+v_recent_measurements(host,"partition",used_space,free_space,partition_size,error_code,measured_at)
 
 insert into hosts (host, partition) values ('alexis', 'ERROR');
 insert into hosts (host, partition) values ('alexis', '/home');
